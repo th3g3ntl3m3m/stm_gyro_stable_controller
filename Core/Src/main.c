@@ -93,6 +93,35 @@ union {
     };
     uint8_t Buffer[RESPONCE_SIZE];
 } SerialControlWheelsResponce;
+
+#define CLIENT_REQUEST_SIZE 16
+union {
+    struct
+    {
+        uint8_t ControlMode;
+        uint8_t ParameterNumber;
+        float ParameterValue;
+        float LinearSpeed;        // -2.0 to 5.0 m/s
+        float WheelRight;		  // -1.0 to 3.5 rad/s
+        uint8_t CR;
+        uint8_t LF;
+    };
+    uint8_t Buffer[REQUEST_SIZE];
+} SerialClientRequest;
+
+#define CLIENT_RESPONCE_SIZE 8
+union {
+    struct
+    {
+        uint8_t State;
+        uint8_t ParameterNumber;
+        float ParameterValue;
+        uint8_t CR;
+        uint8_t LF;
+    };
+    uint8_t Buffer[RESPONCE_SIZE];
+} SerialClientResponce;
+
 #pragma pack(pop)
 
 volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
