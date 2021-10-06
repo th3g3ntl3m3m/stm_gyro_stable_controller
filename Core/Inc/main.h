@@ -58,6 +58,10 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define MB_U2_TX_Pin GPIO_PIN_2
+#define MB_U2_TX_GPIO_Port GPIOA
+#define MB_U2_RX_Pin GPIO_PIN_3
+#define MB_U2_RX_GPIO_Port GPIOA
 #define LED_0_Pin GPIO_PIN_12
 #define LED_0_GPIO_Port GPIOD
 #define LED_1_Pin GPIO_PIN_13
@@ -66,6 +70,10 @@ void Error_Handler(void);
 #define LED_2_GPIO_Port GPIOD
 #define LED_3_Pin GPIO_PIN_15
 #define LED_3_GPIO_Port GPIOD
+#define CLIENT_TX_Pin GPIO_PIN_9
+#define CLIENT_TX_GPIO_Port GPIOA
+#define CLIENT_RX_Pin GPIO_PIN_10
+#define CLIENT_RX_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
