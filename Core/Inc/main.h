@@ -50,6 +50,8 @@ extern "C" {
 
 /* USER CODE END EM */
 
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -58,10 +60,76 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define MB_U2_TX_Pin GPIO_PIN_2
-#define MB_U2_TX_GPIO_Port GPIOA
-#define MB_U2_RX_Pin GPIO_PIN_3
-#define MB_U2_RX_GPIO_Port GPIOA
+#define ICM20948_CS_Pin GPIO_PIN_2
+#define ICM20948_CS_GPIO_Port GPIOE
+#define J11_RESERVED_Pin GPIO_PIN_3
+#define J11_RESERVED_GPIO_Port GPIOE
+#define J12_RESERVED_Pin GPIO_PIN_4
+#define J12_RESERVED_GPIO_Port GPIOE
+#define J13_RESERVED_Pin GPIO_PIN_5
+#define J13_RESERVED_GPIO_Port GPIOE
+#define J14_RESERVED_Pin GPIO_PIN_6
+#define J14_RESERVED_GPIO_Port GPIOE
+#define ADC_AMP_36V_Pin GPIO_PIN_0
+#define ADC_AMP_36V_GPIO_Port GPIOC
+#define BTN_2_PWR_ON_Pin GPIO_PIN_1
+#define BTN_2_PWR_ON_GPIO_Port GPIOC
+#define ADC_VOLT_BAT_Pin GPIO_PIN_2
+#define ADC_VOLT_BAT_GPIO_Port GPIOC
+#define ADC_VOLT_PWR_ST_Pin GPIO_PIN_3
+#define ADC_VOLT_PWR_ST_GPIO_Port GPIOC
+#define BTN_1_LED_Pin GPIO_PIN_0
+#define BTN_1_LED_GPIO_Port GPIOA
+#define LED_PWM_2_Pin GPIO_PIN_1
+#define LED_PWM_2_GPIO_Port GPIOA
+#define ADC_IK_CENTER_Pin GPIO_PIN_2
+#define ADC_IK_CENTER_GPIO_Port GPIOA
+#define ADC_IK_BACK_LEFT_Pin GPIO_PIN_3
+#define ADC_IK_BACK_LEFT_GPIO_Port GPIOA
+#define ADC_IK_BACK_RIGHT_Pin GPIO_PIN_4
+#define ADC_IK_BACK_RIGHT_GPIO_Port GPIOA
+#define ADC_IK_FRONT_LEFT_Pin GPIO_PIN_5
+#define ADC_IK_FRONT_LEFT_GPIO_Port GPIOA
+#define ADC_IK_FRONT_RIGHT_Pin GPIO_PIN_6
+#define ADC_IK_FRONT_RIGHT_GPIO_Port GPIOA
+#define SERVO_PWM_Pin GPIO_PIN_7
+#define SERVO_PWM_GPIO_Port GPIOA
+#define DRIVER_STEP_Pin GPIO_PIN_4
+#define DRIVER_STEP_GPIO_Port GPIOC
+#define DRIVER_DIR_Pin GPIO_PIN_5
+#define DRIVER_DIR_GPIO_Port GPIOC
+#define ADC_AMP_5V_Pin GPIO_PIN_0
+#define ADC_AMP_5V_GPIO_Port GPIOB
+#define ADC_AMP_12V_Pin GPIO_PIN_1
+#define ADC_AMP_12V_GPIO_Port GPIOB
+#define J1_SERVICE_LED_Pin GPIO_PIN_2
+#define J1_SERVICE_LED_GPIO_Port GPIOB
+#define J2_GYRO_SELECTOR_Pin GPIO_PIN_7
+#define J2_GYRO_SELECTOR_GPIO_Port GPIOE
+#define J3_SERVO_SELECTOR_Pin GPIO_PIN_8
+#define J3_SERVO_SELECTOR_GPIO_Port GPIOE
+#define J4_POWER_LOGIC_Pin GPIO_PIN_9
+#define J4_POWER_LOGIC_GPIO_Port GPIOE
+#define J5_LED_LINE_Pin GPIO_PIN_10
+#define J5_LED_LINE_GPIO_Port GPIOE
+#define J6_IK_SENSORS_Pin GPIO_PIN_11
+#define J6_IK_SENSORS_GPIO_Port GPIOE
+#define J7_UART_PROTO_Pin GPIO_PIN_12
+#define J7_UART_PROTO_GPIO_Port GPIOE
+#define J8_AUTO_PARKING_Pin GPIO_PIN_13
+#define J8_AUTO_PARKING_GPIO_Port GPIOE
+#define J9_GYRO_STABLE_Pin GPIO_PIN_14
+#define J9_GYRO_STABLE_GPIO_Port GPIOE
+#define J10_RESERVED_Pin GPIO_PIN_15
+#define J10_RESERVED_GPIO_Port GPIOE
+#define LED_PWM_3_Pin GPIO_PIN_10
+#define LED_PWM_3_GPIO_Port GPIOB
+#define LED_PWM_4_Pin GPIO_PIN_11
+#define LED_PWM_4_GPIO_Port GPIOB
+#define ARDUINO_MPU9250_TX_Pin GPIO_PIN_8
+#define ARDUINO_MPU9250_TX_GPIO_Port GPIOD
+#define ARDUINO_MPU9250_RX_Pin GPIO_PIN_9
+#define ARDUINO_MPU9250_RX_GPIO_Port GPIOD
 #define LED_0_Pin GPIO_PIN_12
 #define LED_0_GPIO_Port GPIOD
 #define LED_1_Pin GPIO_PIN_13
@@ -70,10 +138,28 @@ void Error_Handler(void);
 #define LED_2_GPIO_Port GPIOD
 #define LED_3_Pin GPIO_PIN_15
 #define LED_3_GPIO_Port GPIOD
-#define CLIENT_TX_Pin GPIO_PIN_9
-#define CLIENT_TX_GPIO_Port GPIOA
-#define CLIENT_RX_Pin GPIO_PIN_10
-#define CLIENT_RX_GPIO_Port GPIOA
+#define PLATFORM_PWR_ON_RELAY_Pin GPIO_PIN_7
+#define PLATFORM_PWR_ON_RELAY_GPIO_Port GPIOC
+#define PWR_STATION_RELAY_Pin GPIO_PIN_8
+#define PWR_STATION_RELAY_GPIO_Port GPIOC
+#define J15_RESERVED_Pin GPIO_PIN_9
+#define J15_RESERVED_GPIO_Port GPIOC
+#define JETSON_TX_Pin GPIO_PIN_9
+#define JETSON_TX_GPIO_Port GPIOA
+#define JETSON_RX_Pin GPIO_PIN_10
+#define JETSON_RX_GPIO_Port GPIOA
+#define LED_PWM_1_Pin GPIO_PIN_15
+#define LED_PWM_1_GPIO_Port GPIOA
+#define GYROSCOOTER_TX_Pin GPIO_PIN_5
+#define GYROSCOOTER_TX_GPIO_Port GPIOD
+#define GYROSCOOTER_RX_Pin GPIO_PIN_6
+#define GYROSCOOTER_RX_GPIO_Port GPIOD
+#define ICM20948_SCK_Pin GPIO_PIN_3
+#define ICM20948_SCK_GPIO_Port GPIOB
+#define ICM20948_MISO_Pin GPIO_PIN_4
+#define ICM20948_MISO_GPIO_Port GPIOB
+#define ICM20948_MOSI_Pin GPIO_PIN_5
+#define ICM20948_MOSI_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
