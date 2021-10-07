@@ -737,8 +737,8 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
@@ -762,11 +762,11 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pins : J11_RESERVED_Pin J12_RESERVED_Pin J13_RESERVED_Pin J14_RESERVED_Pin
                            J2_GYRO_SELECTOR_Pin J3_SERVO_SELECTOR_Pin J4_POWER_LOGIC_Pin J5_LED_LINE_Pin
                            J6_IK_SENSORS_Pin J7_UART_PROTO_Pin J8_AUTO_PARKING_Pin J9_GYRO_STABLE_Pin
-                           J10_RESERVED_Pin */
+                           J10_FACTORY_MODE_Pin */
   GPIO_InitStruct.Pin = J11_RESERVED_Pin|J12_RESERVED_Pin|J13_RESERVED_Pin|J14_RESERVED_Pin
                           |J2_GYRO_SELECTOR_Pin|J3_SERVO_SELECTOR_Pin|J4_POWER_LOGIC_Pin|J5_LED_LINE_Pin
                           |J6_IK_SENSORS_Pin|J7_UART_PROTO_Pin|J8_AUTO_PARKING_Pin|J9_GYRO_STABLE_Pin
-                          |J10_RESERVED_Pin;
+                          |J10_FACTORY_MODE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
