@@ -83,7 +83,7 @@ static void MX_TIM14_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 #pragma pack(push, 1)
-#define REQUEST_SIZE 16
+#define WHEELS_REQUEST_SIZE 16
 union {
     struct
     {
@@ -95,10 +95,10 @@ union {
         uint8_t CR;
         uint8_t LF;
     };
-    uint8_t Buffer[REQUEST_SIZE];
+    uint8_t Buffer[WHEELS_REQUEST_SIZE];
 } SerialControlWheelsRequest;
 
-#define RESPONCE_SIZE 16
+#define WHEELS_RESPONCE_SIZE 16
 union {
     struct
     {
@@ -110,41 +110,11 @@ union {
         uint8_t CR;
         uint8_t LF;
     };
-    uint8_t Buffer[RESPONCE_SIZE];
+    uint8_t Buffer[WHEELS_RESPONCE_SIZE];
 } SerialControlWheelsResponce;
-
-#define CLIENT_REQUEST_SIZE 16
-union {
-    struct
-    {
-        uint8_t ControlMode;
-        uint8_t ParameterNumber;
-        float ParameterValue;
-        float LinearSpeed;        // -2.0 to 5.0 m/s
-        float WheelRight;		  // -1.0 to 3.5 rad/s
-        uint8_t CR;
-        uint8_t LF;
-    };
-    uint8_t Buffer[REQUEST_SIZE];
-} SerialClientRequest;
-
-#define CLIENT_RESPONCE_SIZE 8
-union {
-    struct
-    {
-        uint8_t State;
-        uint8_t ParameterNumber;
-        float ParameterValue;
-        uint8_t CR;
-        uint8_t LF;
-    };
-    uint8_t Buffer[RESPONCE_SIZE];
-} SerialClientResponce;
-
 #pragma pack(pop)
 
 volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
-volatile uint8_t USART3ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
 
 uint8_t* LostByte;
 
@@ -154,13 +124,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
 	HAL_StatusTypeDef Res;
 
-	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
-
 	if (UartHandle->Instance == USART2)
 	{
 		if (USART2ReceiveState == 0)
 		{
-			if ((SerialControlWheelsRequest.CR != 13) || (SerialControlWheelsRequest.LF != 10))
+			if ((SerialControlWheelsResponce.CR != 13) || (SerialControlWheelsResponce.LF != 10))
 			{
 				Res = HAL_UART_Receive_DMA(&huart2, LostByte, 1);
 				USART2ReceiveState = 1;
@@ -168,7 +136,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 			else
 			{
 				USART2ReceiveState = 10;
-				Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, REQUEST_SIZE);
+				Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 			}
 		}
 		else
@@ -185,7 +153,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 					if (LostByte[0] == 10)
 					{
 						USART2ReceiveState = 0;
-						Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, REQUEST_SIZE);
+						Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 					}
 					else
 					{
@@ -198,9 +166,26 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 			{
 				MX_USART2_UART_Init();
 				USART2ReceiveState = 0;
-				Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, REQUEST_SIZE);
+				Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 			}
 	}
+}
+
+float Left;
+float Right;
+
+uint8_t ParameterNumber;
+
+void LoopLoadPkgUART2()
+{
+	SerialControlWheelsRequest.ControlMode = 0;
+	SerialControlWheelsRequest.ParameterNumber = 0;
+	SerialControlWheelsRequest.WheelLeft = Left;
+	SerialControlWheelsRequest.WheelRight = Right;
+	SerialControlWheelsRequest.CR=13;
+	SerialControlWheelsRequest.LF=10;
+
+	HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
 }
 
 /* USER CODE END 0 */
@@ -245,23 +230,30 @@ int main(void)
   MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
 
-
-
-  SerialControlWheelsResponce.CR=13;
-  SerialControlWheelsResponce.LF=10;
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (HAL_GetTick() - PackageLastTimeReset > 1000)
+	  Left = 0.05;
+	  Right = 0.05;
+
+	  LoopLoadPkgUART2();
+
+	  if (HAL_GetTick() - PackageLastTimeReset > 1000) // UART2 RECEIVE FEEDBACK
 	  {
 		  MX_USART2_UART_Init();
 		  USART2ReceiveState=0;
-		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, REQUEST_SIZE);
+		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+		  PackageLastTimeReset = HAL_GetTick();
+	  }
+
+	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
+	  {
+		  USART2ReceiveState=0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
+
 		  PackageLastTimeReset = HAL_GetTick();
 	  }
     /* USER CODE END WHILE */
@@ -644,7 +636,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 38400;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
