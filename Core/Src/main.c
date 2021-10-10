@@ -171,7 +171,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 			}
 			else
 			{
-				USART1ReceiveState = 10;
+ 				USART1ReceiveState = 10;
 				Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
 			}
 		}
@@ -379,8 +379,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  LoopLoadPkgUART2();
-
 	  if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 1000)
 	  {
 		  MX_USART1_UART_Init();
@@ -426,8 +424,16 @@ int main(void)
 		  USART1ReceiveState = 0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_14);
 
+		  if ((SerialOnBoardRequest.Linear <= 0.3) && (SerialOnBoardRequest.Linear >= -0.3))
+		  {
+			  Left = SerialOnBoardRequest.Linear;
+			  Right = SerialOnBoardRequest.Linear;
+		  }
+
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
 	  }
+
+	  LoopLoadPkgUART2();
 
 	  // Motherboard block end----------------------------------------------
 
