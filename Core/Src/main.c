@@ -140,7 +140,9 @@ volatile uint8_t USART3ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 
 
 uint8_t* LostByte;
 
-uint32_t PackageLastTimeReset;
+uint32_t PackageLastTimeReset_Motherboard;
+uint32_t PackageLastTimeReset_GYRO;
+uint32_t PackageLastTimeReset_OnBoardPC;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
@@ -314,17 +316,25 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  Left = 0.05;
+	  Right = 0.05;
+
 	  LoopLoadPkgUART2();
 
-	  if (HAL_GetTick() - PackageLastTimeReset > 1000) // UART2 RECEIVE FEEDBACK
+	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 1000) // UART2 RECEIVE FEEDBACK
 	  {
 		  MX_USART2_UART_Init();
-		  MX_USART3_UART_Init();
 		  USART2ReceiveState=0;
-		  USART3ReceiveState=0;
 		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+		  PackageLastTimeReset_Motherboard = HAL_GetTick();
+	  }
+
+	  if (HAL_GetTick() - PackageLastTimeReset_GYRO > 1000)
+	  {
+		  MX_USART3_UART_Init();
+		  USART3ReceiveState=0;
 		  HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
-		  PackageLastTimeReset = HAL_GetTick();
+		  PackageLastTimeReset_GYRO = HAL_GetTick();
 	  }
 
 	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
@@ -332,13 +342,15 @@ int main(void)
 		  USART2ReceiveState = 0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
 
-		  PackageLastTimeReset = HAL_GetTick();
+		  PackageLastTimeReset_Motherboard = HAL_GetTick();
 	  }
 
 	  if ((USART3ReceiveState == 10) && (SerialArduinoGyroResponce.CR == 13) && (SerialArduinoGyroResponce.LF == 10))
 	  {
 		  USART3ReceiveState = 0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+
+		  PackageLastTimeReset_GYRO = HAL_GetTick();
 	  }
 	  // Motherboard block end----------------------------------------------
 
