@@ -112,9 +112,31 @@ union {
     };
     uint8_t Buffer[WHEELS_RESPONCE_SIZE];
 } SerialControlWheelsResponce;
+
+#define GYRO_ARDUINO_RESPONCE_SIZE 42
+union {
+	struct
+	{
+		float AccelX_mss;
+		float AccelY_mss;
+		float AccelZ_mss;
+		float GyroX_rads;
+		float GyroY_rads;
+		float GyroZ_rads;
+		float MagX_uT;
+		float MagY_uT;
+		float MagZ_uT;
+		float Temperature_C;
+		uint8_t CR;
+		uint8_t LF;
+	};
+	uint8_t Buffer[GYRO_ARDUINO_RESPONCE_SIZE];
+} SerialArduinoGyroResponce;
 #pragma pack(pop)
 
-volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
+volatile uint8_t USART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
+volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
+volatile uint8_t USART3ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
 
 uint8_t* LostByte;
 
@@ -140,7 +162,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 			}
 		}
 		else
-		if(USART2ReceiveState == 1)
+		{
+			if(USART2ReceiveState == 1)
 			{
 				if (LostByte[0] == 13)
 				{
@@ -148,7 +171,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 				}
 				Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)LostByte, 1);
 			}
-			else if (USART2ReceiveState == 2)
+			else
+			{
+				if (USART2ReceiveState == 2)
 				{
 					if (LostByte[0] == 10)
 					{
@@ -160,14 +185,67 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 						USART2ReceiveState = 1;
 						Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)LostByte, 1);
 					}
+				}
 			}
+		}
 
-			if (Res != HAL_OK)
+		if (Res != HAL_OK)
+		{
+			MX_USART2_UART_Init();
+			USART2ReceiveState = 0;
+			Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+		}
+	}
+
+	if (UartHandle->Instance == USART3)
+	{
+		if (USART3ReceiveState == 0)
+		{
+			if ((SerialArduinoGyroResponce.CR != 13) || (SerialArduinoGyroResponce.LF != 10))
 			{
-				MX_USART2_UART_Init();
-				USART2ReceiveState = 0;
-				Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+				Res = HAL_UART_Receive_DMA(&huart3, LostByte, 1);
+				USART3ReceiveState = 1;
 			}
+			else
+			{
+				USART3ReceiveState = 10;
+				Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
+			}
+		}
+		else
+		{
+			if(USART3ReceiveState == 1)
+			{
+				if (LostByte[0] == 13)
+				{
+					USART3ReceiveState = 2;
+				}
+				Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)LostByte, 1);
+			}
+			else
+			{
+				if (USART3ReceiveState == 2)
+				{
+					if (LostByte[0] == 10)
+					{
+						USART3ReceiveState = 0;
+						Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
+					}
+					else
+					{
+						USART3ReceiveState = 1;
+						Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)LostByte, 1);
+					}
+				}
+			}
+		}
+
+		if (Res != HAL_OK)
+		{
+			MX_USART3_UART_Init();
+			USART3ReceiveState = 0;
+			Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
+		}
 	}
 }
 
@@ -236,26 +314,34 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  Left = 0.05;
-	  Right = 0.05;
-
 	  LoopLoadPkgUART2();
 
 	  if (HAL_GetTick() - PackageLastTimeReset > 1000) // UART2 RECEIVE FEEDBACK
 	  {
 		  MX_USART2_UART_Init();
+		  MX_USART3_UART_Init();
 		  USART2ReceiveState=0;
+		  USART3ReceiveState=0;
 		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+		  HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
 		  PackageLastTimeReset = HAL_GetTick();
 	  }
 
 	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
-		  USART2ReceiveState=0;
+		  USART2ReceiveState = 0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
 
 		  PackageLastTimeReset = HAL_GetTick();
 	  }
+
+	  if ((USART3ReceiveState == 10) && (SerialArduinoGyroResponce.CR == 13) && (SerialArduinoGyroResponce.LF == 10))
+	  {
+		  USART3ReceiveState = 0;
+		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+	  }
+	  // Motherboard block end----------------------------------------------
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
