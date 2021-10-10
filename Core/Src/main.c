@@ -132,11 +132,23 @@ union {
 	};
 	uint8_t Buffer[GYRO_ARDUINO_RESPONCE_SIZE];
 } SerialArduinoGyroResponce;
+
+#define ON_BOARD_CONTROL_REQUEST 10
+union {
+	struct
+	{
+		float Linear;
+		float Angular;
+		uint8_t CR;
+		uint8_t LF;
+	};
+	uint8_t Buffer[ON_BOARD_CONTROL_REQUEST];
+} SerialOnBoardRequest;
 #pragma pack(pop)
 
-volatile uint8_t USART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
+volatile uint8_t USART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
 volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
-volatile uint8_t USART3ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
+volatile uint8_t USART3ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //Gyro Arduino
 
 uint8_t* LostByte;
 
@@ -147,6 +159,57 @@ uint32_t PackageLastTimeReset_OnBoardPC;
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
 	HAL_StatusTypeDef Res;
+
+	if (UartHandle->Instance == USART1)
+	{
+		if (USART1ReceiveState == 0)
+		{
+			if ((SerialOnBoardRequest.CR != 13) || (SerialOnBoardRequest.LF != 10))
+			{
+				Res = HAL_UART_Receive_DMA(&huart1, LostByte, 1);
+				USART1ReceiveState = 1;
+			}
+			else
+			{
+				USART1ReceiveState = 10;
+				Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
+			}
+		}
+		else
+		{
+			if(USART1ReceiveState == 1)
+			{
+				if (LostByte[0] == 13)
+				{
+					USART1ReceiveState = 2;
+				}
+				Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)LostByte, 1);
+			}
+			else
+			{
+				if (USART1ReceiveState == 2)
+				{
+					if (LostByte[0] == 10)
+					{
+						USART1ReceiveState = 0;
+						Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
+					}
+					else
+					{
+						USART1ReceiveState = 1;
+						Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)LostByte, 1);
+					}
+				}
+			}
+		}
+
+		if (Res != HAL_OK)
+		{
+			MX_USART1_UART_Init();
+			USART1ReceiveState = 0;
+			Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
+		}
+	}
 
 	if (UartHandle->Instance == USART2)
 	{
@@ -316,15 +379,20 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  Left = 0.05;
-	  Right = 0.05;
-
 	  LoopLoadPkgUART2();
+
+	  if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 1000)
+	  {
+		  MX_USART1_UART_Init();
+		  USART1ReceiveState = 0;
+		  HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
+		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
+	  }
 
 	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 1000) // UART2 RECEIVE FEEDBACK
 	  {
 		  MX_USART2_UART_Init();
-		  USART2ReceiveState=0;
+		  USART2ReceiveState = 0;
 		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 		  PackageLastTimeReset_Motherboard = HAL_GetTick();
 	  }
@@ -332,7 +400,7 @@ int main(void)
 	  if (HAL_GetTick() - PackageLastTimeReset_GYRO > 1000)
 	  {
 		  MX_USART3_UART_Init();
-		  USART3ReceiveState=0;
+		  USART3ReceiveState = 0;
 		  HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
 		  PackageLastTimeReset_GYRO = HAL_GetTick();
 	  }
