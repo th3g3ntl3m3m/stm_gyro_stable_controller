@@ -420,6 +420,15 @@ int main(void)
 
 		  PackageLastTimeReset_GYRO = HAL_GetTick();
 	  }
+
+	  if ((USART1ReceiveState == 10) && (SerialOnBoardRequest.CR == 13) && (SerialOnBoardRequest.LF == 10))
+	  {
+		  USART1ReceiveState = 0;
+		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_14);
+
+		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
+	  }
+
 	  // Motherboard block end----------------------------------------------
 
     /* USER CODE END WHILE */
