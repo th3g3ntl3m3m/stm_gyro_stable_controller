@@ -27,63 +27,8 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-ADC_HandleTypeDef hadc1;
-
-SPI_HandleTypeDef hspi1;
-
-TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim6;
-TIM_HandleTypeDef htim7;
-TIM_HandleTypeDef htim14;
-
-UART_HandleTypeDef huart1;
-UART_HandleTypeDef huart2;
-UART_HandleTypeDef huart3;
-DMA_HandleTypeDef hdma_usart1_rx;
-DMA_HandleTypeDef hdma_usart1_tx;
-DMA_HandleTypeDef hdma_usart2_rx;
-DMA_HandleTypeDef hdma_usart2_tx;
-DMA_HandleTypeDef hdma_usart3_rx;
-DMA_HandleTypeDef hdma_usart3_tx;
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
-static void MX_USART2_UART_Init(void);
-static void MX_USART1_UART_Init(void);
-static void MX_SPI1_Init(void);
-static void MX_USART3_UART_Init(void);
-static void MX_ADC1_Init(void);
-static void MX_TIM2_Init(void);
-static void MX_TIM6_Init(void);
-static void MX_TIM7_Init(void);
-static void MX_TIM14_Init(void);
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
 #pragma pack(push, 1)
-#define WHEELS_REQUEST_SIZE 16
+#define WHEELS_REQUEST_SIZE 16 // Пакет для взаимодействия с STMF103 на плате гироскутера
 union {
     struct
     {
@@ -113,39 +58,108 @@ union {
     uint8_t Buffer[WHEELS_RESPONCE_SIZE];
 } SerialControlWheelsResponce;
 
-#define GYRO_ARDUINO_RESPONCE_SIZE 42
+#define GYRO_ARDUINO_RESPONCE_SIZE 20 // Пакет взаимодействия с ESP-12 с модулем гироскопа MPU-9250
 union {
 	struct
 	{
-		float AccelX_mss;
-		float AccelY_mss;
-		float AccelZ_mss;
-		float GyroX_rads;
-		float GyroY_rads;
-		float GyroZ_rads;
-		float MagX_uT;
-		float MagY_uT;
-		float MagZ_uT;
-		float Temperature_C;
+		struct
+		{
+			int16_t X;
+		    int16_t Y;
+		    int16_t Z;
+		} sRawGravity;
+		struct
+		{
+			int16_t X;
+		    int16_t Y;
+		    int16_t Z;
+		} sRawGyroAcc;
+		struct
+		{
+			int16_t X;
+		    int16_t Y;
+		    int16_t Z;
+		} sRawAccels;
 		uint8_t CR;
 		uint8_t LF;
 	};
 	uint8_t Buffer[GYRO_ARDUINO_RESPONCE_SIZE];
 } SerialArduinoGyroResponce;
 
-#define ON_BOARD_CONTROL_REQUEST 10
+#define ON_BOARD_CONTROL_REQUEST_SIZE 10
 union {
 	struct
 	{
 		float Linear;
-		float Angular;
+		int16_t Angular;
+		int8_t ParkingMode;
+		uint8_t LedMode;
 		uint8_t CR;
 		uint8_t LF;
 	};
-	uint8_t Buffer[ON_BOARD_CONTROL_REQUEST];
+	uint8_t Buffer[ON_BOARD_CONTROL_REQUEST_SIZE];
 } SerialOnBoardRequest;
+
+#define ON_BOARD_CONTROL_RESPONCE_SIZE 10
+union {
+	struct
+	{
+		int32_t WheelLeftSteps;
+		int32_t WheelRightSteps;
+		uint8_t CR;
+		uint8_t LF;
+	};
+	uint8_t Buffer[ON_BOARD_CONTROL_RESPONCE_SIZE];
+}SerialOnBoardResponce;
 #pragma pack(pop)
 
+typedef struct
+{
+	int16_t x;
+	int16_t y;
+	int16_t z;
+} sVector;
+
+typedef struct
+{
+	sVector Gravity;
+	sVector GyroAcc;
+	sVector Accels;
+	unsigned long LastPkgTime;
+} sGyro3Vec;
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
+SPI_HandleTypeDef hspi1;
+
+TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim7;
+TIM_HandleTypeDef htim14;
+
+UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart1_tx;
+DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
+DMA_HandleTypeDef hdma_usart3_rx;
+DMA_HandleTypeDef hdma_usart3_tx;
+
+/* USER CODE BEGIN PV */
 volatile uint8_t USART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
 volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
 volatile uint8_t USART3ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //Gyro Arduino
@@ -156,58 +170,78 @@ uint32_t PackageLastTimeReset_Motherboard;
 uint32_t PackageLastTimeReset_GYRO;
 uint32_t PackageLastTimeReset_OnBoardPC;
 
+sGyro3Vec GyroSource;
+sGyro3Vec GyroCalculate;
+
+float Left;
+float Right;
+
+uint8_t ParameterNumber;
+
+int CalibrateTimeMS = 3000;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_USART1_UART_Init(void);
+static void MX_SPI1_Init(void);
+static void MX_USART3_UART_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_TIM6_Init(void);
+static void MX_TIM7_Init(void);
+static void MX_TIM14_Init(void);
+/* USER CODE BEGIN PFP */
+void IMU_Init();
+void IMU_CalibrateGyro();
+void IMU_Initialize();
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
 	HAL_StatusTypeDef Res;
 
-	if (UartHandle->Instance == USART1)
-	{
-		if (USART1ReceiveState == 0)
-		{
-			if ((SerialOnBoardRequest.CR != 13) || (SerialOnBoardRequest.LF != 10))
-			{
+	if (UartHandle->Instance == USART1){ // Jetson commutation
+		if (USART1ReceiveState == 0){
+			if ((SerialOnBoardRequest.CR != 13) || (SerialOnBoardRequest.LF != 10)){
 				Res = HAL_UART_Receive_DMA(&huart1, LostByte, 1);
 				USART1ReceiveState = 1;
 			}
-			else
-			{
+			else{
  				USART1ReceiveState = 10;
-				Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
+				Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 			}
 		}
-		else
-		{
-			if(USART1ReceiveState == 1)
-			{
-				if (LostByte[0] == 13)
-				{
+		else{
+			if(USART1ReceiveState == 1){
+				if (LostByte[0] == 13){
 					USART1ReceiveState = 2;
 				}
 				Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)LostByte, 1);
 			}
-			else
-			{
-				if (USART1ReceiveState == 2)
-				{
-					if (LostByte[0] == 10)
-					{
+			else{
+				if (USART1ReceiveState == 2){
+					if (LostByte[0] == 10){
 						USART1ReceiveState = 0;
-						Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
+						Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 					}
-					else
-					{
+					else{
 						USART1ReceiveState = 1;
 						Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)LostByte, 1);
 					}
 				}
 			}
 		}
-
 		if (Res != HAL_OK)
 		{
 			MX_USART1_UART_Init();
 			USART1ReceiveState = 0;
-			Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
+			Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 		}
 	}
 
@@ -314,11 +348,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 	}
 }
 
-float Left;
-float Right;
-
-uint8_t ParameterNumber;
-
 void LoopLoadPkgUART2()
 {
 	SerialControlWheelsRequest.ControlMode = 0;
@@ -330,7 +359,6 @@ void LoopLoadPkgUART2()
 
 	HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -373,6 +401,8 @@ int main(void)
   MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
 
+  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+  HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -383,25 +413,25 @@ int main(void)
 	  {
 		  MX_USART1_UART_Init();
 		  USART1ReceiveState = 0;
-		  HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST);
+		  HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
 	  }
 
 	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 1000) // UART2 RECEIVE FEEDBACK
 	  {
-		  MX_USART2_UART_Init();
+		  //MX_USART2_UART_Init();
 		  USART2ReceiveState = 0;
-		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 		  PackageLastTimeReset_Motherboard = HAL_GetTick();
 	  }
 
 	  if (HAL_GetTick() - PackageLastTimeReset_GYRO > 1000)
 	  {
-		  MX_USART3_UART_Init();
+		  //MX_USART3_UART_Init();
 		  USART3ReceiveState = 0;
-		  HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
 		  PackageLastTimeReset_GYRO = HAL_GetTick();
 	  }
+
+//====================================================================
 
 	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
@@ -417,7 +447,23 @@ int main(void)
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
 
 		  PackageLastTimeReset_GYRO = HAL_GetTick();
+
+		  GyroSource.Gravity.x = SerialArduinoGyroResponce.sRawGravity.X;
+		  GyroSource.Gravity.y = SerialArduinoGyroResponce.sRawGravity.Y;
+		  GyroSource.Gravity.z = SerialArduinoGyroResponce.sRawGravity.Z;
+
+		  GyroSource.GyroAcc.x = SerialArduinoGyroResponce.sRawGyroAcc.X;
+		  GyroSource.GyroAcc.y = SerialArduinoGyroResponce.sRawGyroAcc.Y;
+		  GyroSource.GyroAcc.z = SerialArduinoGyroResponce.sRawGyroAcc.Z;
+
+		  GyroSource.Accels.x = SerialArduinoGyroResponce.sRawAccels.X;
+		  GyroSource.Accels.y = SerialArduinoGyroResponce.sRawAccels.Y;
+		  GyroSource.Accels.z = SerialArduinoGyroResponce.sRawAccels.Z;
+
+		  GyroSource.LastPkgTime = PackageLastTimeReset_GYRO;
 	  }
+
+
 
 	  if ((USART1ReceiveState == 10) && (SerialOnBoardRequest.CR == 13) && (SerialOnBoardRequest.LF == 10))
 	  {
@@ -429,6 +475,13 @@ int main(void)
 			  Left = SerialOnBoardRequest.Linear;
 			  Right = SerialOnBoardRequest.Linear;
 		  }
+
+		  SerialOnBoardResponce.WheelLeftSteps = SerialControlWheelsResponce.WheelLeftSteps;
+		  SerialOnBoardResponce.WheelRightSteps = SerialControlWheelsResponce.WheelRightSteps;
+		  SerialOnBoardResponce.CR = 13;
+		  SerialOnBoardResponce.LF = 10;
+
+ 		  HAL_UART_Transmit_DMA(&huart1, (uint8_t*)SerialOnBoardResponce.Buffer, ON_BOARD_CONTROL_RESPONCE_SIZE);
 
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
 	  }
