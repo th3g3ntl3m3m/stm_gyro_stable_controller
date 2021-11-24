@@ -101,6 +101,9 @@ union {
 #define MOTHERBOARD_DELAY_MS 100
 
 #define MOTHERBOARD_DIFF 100
+
+#define PARKING_SPEED_DRIVE 15
+#define PARKING_SPEED_PARKING 20;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -123,6 +126,13 @@ float RPSRight;
 float OverCurrCount;
 float ConnErrCount;
 float CommTime;
+
+int16_t ParkingPersentage;
+uint8_t FootAngleDemand;
+uint8_t FootDrive;
+uint8_t FootParking;
+uint8_t FootAngle;
+uint8_t FootActive;
 
 uint8_t* LostByte;
 
@@ -363,7 +373,35 @@ void BALANCE_Prepare()
 	Turn = (Turn < -90) ? -90 : Turn;
 	Front = (Front > 2) ? 2 : Front;
 	Front = (Front < -0.4) ? -0.4 : Front;
-}
+
+	// Point to add IK sensor
+
+	if (BalanceActiveDemand)
+	{
+		if (ParkingPersentage == 0)
+		{
+			FootAngleDemand = FootDrive;
+		}
+		ParkingPersentage -= PARKING_SPEED_DRIVE;
+	}
+	else
+	{
+		FootAngleDemand = FootParking;
+		if ((FootAngle == FootAngleDemand) && (!FootActive))
+		{
+			ParkingPersentage += PARKING_SPEED_PARKING;
+		}
+	}
+
+	ParkingPersentage = ParkingPersentage < 0 ? 0 : ParkingPersentage;
+	ParkingPersentage = ParkingPersentage > PARKING_MAX ? PARKING_MAX : ParkingPersentage;
+
+	ParkingAngle = Interpolation(ParkingPersentage, 0, PARKING_DISABLE) * PARKING_ANGLE;
+	BalanceActive = ParkingPersentage < PARKING_MAX;
+	if (ParkingPersentage > 0)
+	{
+		PositionLinearDemand = PositionLinear;
+	}
 float Interpolation(float Value, float Min, float Max)
 {
     float Result = (Value - Min) / (Max - Min);
