@@ -19,10 +19,17 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
+#include "dma.h"
+#include "spi.h"
+#include "tim.h"
+#include "usart.h"
+#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "icm20948.h"
+#include "Fusion.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,34 +65,6 @@ union {
     uint8_t Buffer[WHEELS_RESPONCE_SIZE];
 } SerialControlWheelsResponce;
 
-#define GYRO_ARDUINO_RESPONCE_SIZE 20 // Пакет взаимодействия с ESP-12 с модулем гироскопа MPU-9250
-union {
-	struct
-	{
-		struct
-		{
-			int16_t X;
-		    int16_t Y;
-		    int16_t Z;
-		} sRawGravity;
-		struct
-		{
-			int16_t X;
-		    int16_t Y;
-		    int16_t Z;
-		} sRawGyroAcc;
-		struct
-		{
-			int16_t X;
-		    int16_t Y;
-		    int16_t Z;
-		} sRawAccels;
-		uint8_t CR;
-		uint8_t LF;
-	};
-	uint8_t Buffer[GYRO_ARDUINO_RESPONCE_SIZE];
-} SerialArduinoGyroResponce;
-
 #define ON_BOARD_CONTROL_REQUEST_SIZE 10
 union {
 	struct
@@ -112,26 +91,14 @@ union {
 	uint8_t Buffer[ON_BOARD_CONTROL_RESPONCE_SIZE];
 }SerialOnBoardResponce;
 #pragma pack(pop)
-
-typedef struct
-{
-	int16_t x;
-	int16_t y;
-	int16_t z;
-} sVector;
-
-typedef struct
-{
-	sVector Gravity;
-	sVector GyroAcc;
-	sVector Accels;
-	unsigned long LastPkgTime;
-} sGyro3Vec;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define STATE_INIT 0
 
+#define ON_BOARD_PC_DELAY_MS 100
+#define MOTHERBOARD_DELAY_MS 100
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -140,29 +107,10 @@ typedef struct
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-ADC_HandleTypeDef hadc1;
-
-SPI_HandleTypeDef hspi1;
-
-TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim6;
-TIM_HandleTypeDef htim7;
-TIM_HandleTypeDef htim14;
-
-UART_HandleTypeDef huart1;
-UART_HandleTypeDef huart2;
-UART_HandleTypeDef huart3;
-DMA_HandleTypeDef hdma_usart1_rx;
-DMA_HandleTypeDef hdma_usart1_tx;
-DMA_HandleTypeDef hdma_usart2_rx;
-DMA_HandleTypeDef hdma_usart2_tx;
-DMA_HandleTypeDef hdma_usart3_rx;
-DMA_HandleTypeDef hdma_usart3_tx;
 
 /* USER CODE BEGIN PV */
 volatile uint8_t USART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
 volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
-volatile uint8_t USART3ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //Gyro Arduino
 
 uint8_t* LostByte;
 
@@ -170,34 +118,39 @@ uint32_t PackageLastTimeReset_Motherboard;
 uint32_t PackageLastTimeReset_GYRO;
 uint32_t PackageLastTimeReset_OnBoardPC;
 
-sGyro3Vec GyroSource;
-sGyro3Vec GyroCalculate;
-
 float Left;
 float Right;
 
 uint8_t ParameterNumber;
 
 int CalibrateTimeMS = 3000;
+
+int CONTROLER_STATE = STATE_INIT;
+
+axises my_gyro;
+axises my_accel;
+axises my_mag;
+
+FusionBias fusionBias;
+FusionAhrs fusionAhrs;
+float samplePeriod = 0.1f;
+FusionVector3 gyroscopeSensitivity;
+FusionVector3 accelerometerSensitivity;
+FusionVector3 hardIronBias;
+FusionVector3 uncalibratedGyroscope;
+FusionVector3 uncalibratedAccelerometer;
+FusionVector3 uncalibratedMagnetometer;
+FusionEulerAngles eulerAngles;
+
+int32_t WheelLeftStepsLocal;
+int32_t WheelRightStepsLocal;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
-static void MX_USART2_UART_Init(void);
-static void MX_USART1_UART_Init(void);
-static void MX_SPI1_Init(void);
-static void MX_USART3_UART_Init(void);
-static void MX_ADC1_Init(void);
-static void MX_TIM2_Init(void);
-static void MX_TIM6_Init(void);
-static void MX_TIM7_Init(void);
-static void MX_TIM14_Init(void);
 /* USER CODE BEGIN PFP */
-void IMU_Init();
-void IMU_CalibrateGyro();
-void IMU_Initialize();
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -206,15 +159,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
 	HAL_StatusTypeDef Res;
 
-	if (UartHandle->Instance == USART1){ // Jetson commutation
+	if (UartHandle->Instance == UART4){ // Jetson commutation
 		if (USART1ReceiveState == 0){
 			if ((SerialOnBoardRequest.CR != 13) || (SerialOnBoardRequest.LF != 10)){
-				Res = HAL_UART_Receive_DMA(&huart1, LostByte, 1);
+				Res = HAL_UART_Receive_DMA(&huart4, LostByte, 1);
 				USART1ReceiveState = 1;
 			}
 			else{
  				USART1ReceiveState = 10;
-				Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+				Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 			}
 		}
 		else{
@@ -222,26 +175,26 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 				if (LostByte[0] == 13){
 					USART1ReceiveState = 2;
 				}
-				Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)LostByte, 1);
+				Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)LostByte, 1);
 			}
 			else{
 				if (USART1ReceiveState == 2){
 					if (LostByte[0] == 10){
 						USART1ReceiveState = 0;
-						Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+						Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 					}
 					else{
 						USART1ReceiveState = 1;
-						Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)LostByte, 1);
+						Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)LostByte, 1);
 					}
 				}
 			}
 		}
 		if (Res != HAL_OK)
 		{
-			MX_USART1_UART_Init();
+			MX_UART4_Init();
 			USART1ReceiveState = 0;
-			Res = HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+			Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 		}
 	}
 
@@ -295,69 +248,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 			Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 		}
 	}
-
-	if (UartHandle->Instance == USART3)
-	{
-		if (USART3ReceiveState == 0)
-		{
-			if ((SerialArduinoGyroResponce.CR != 13) || (SerialArduinoGyroResponce.LF != 10))
-			{
-				Res = HAL_UART_Receive_DMA(&huart3, LostByte, 1);
-				USART3ReceiveState = 1;
-			}
-			else
-			{
-				USART3ReceiveState = 10;
-				Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
-			}
-		}
-		else
-		{
-			if(USART3ReceiveState == 1)
-			{
-				if (LostByte[0] == 13)
-				{
-					USART3ReceiveState = 2;
-				}
-				Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)LostByte, 1);
-			}
-			else
-			{
-				if (USART3ReceiveState == 2)
-				{
-					if (LostByte[0] == 10)
-					{
-						USART3ReceiveState = 0;
-						Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
-					}
-					else
-					{
-						USART3ReceiveState = 1;
-						Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)LostByte, 1);
-					}
-				}
-			}
-		}
-
-		if (Res != HAL_OK)
-		{
-			MX_USART3_UART_Init();
-			USART3ReceiveState = 0;
-			Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
-		}
-	}
-}
-
-void LoopLoadPkgUART2()
-{
-	SerialControlWheelsRequest.ControlMode = 0;
-	SerialControlWheelsRequest.ParameterNumber = 0;
-	SerialControlWheelsRequest.WheelLeft = Left;
-	SerialControlWheelsRequest.WheelRight = Right;
-	SerialControlWheelsRequest.CR=13;
-	SerialControlWheelsRequest.LF=10;
-
-	HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
 }
 /* USER CODE END 0 */
 
@@ -384,86 +274,94 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
+  gyroscopeSensitivity.axis.x = 1.0f;
+  gyroscopeSensitivity.axis.y = 1.0f;
+  gyroscopeSensitivity.axis.z = 1.0f;
 
+  accelerometerSensitivity.axis.x = 1.0f;
+  accelerometerSensitivity.axis.y = 1.0f;
+  accelerometerSensitivity.axis.z = 1.0f;
+
+  hardIronBias.axis.x = 0.0f;
+  hardIronBias.axis.y = 0.0f;
+  hardIronBias.axis.z = 0.0f;
+
+  FusionBiasInitialise(&fusionBias, 0.5f, samplePeriod);
+  FusionAhrsInitialise(&fusionAhrs, 0.5f);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART2_UART_Init();
-  MX_USART1_UART_Init();
-  MX_SPI1_Init();
-  MX_USART3_UART_Init();
   MX_ADC1_Init();
   MX_TIM2_Init();
   MX_TIM6_Init();
   MX_TIM7_Init();
   MX_TIM14_Init();
+  MX_UART4_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-
-  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
-  HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialArduinoGyroResponce.Buffer, GYRO_ARDUINO_RESPONCE_SIZE);
+  icm20948_init();
+  ak09916_init ();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 1000)
+	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100) // UART2 RECEIVE FEEDBACK
 	  {
-		  MX_USART1_UART_Init();
-		  USART1ReceiveState = 0;
-		  HAL_UART_Receive_DMA(&huart1, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
-		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
-	  }
-
-	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 1000) // UART2 RECEIVE FEEDBACK
-	  {
-		  //MX_USART2_UART_Init();
+		  MX_USART2_UART_Init();
 		  USART2ReceiveState = 0;
+		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 		  PackageLastTimeReset_Motherboard = HAL_GetTick();
 	  }
 
-	  if (HAL_GetTick() - PackageLastTimeReset_GYRO > 1000)
-	  {
-		  //MX_USART3_UART_Init();
-		  USART3ReceiveState = 0;
-		  PackageLastTimeReset_GYRO = HAL_GetTick();
-	  }
+	  WheelLeftStepsLocal = SerialControlWheelsResponce.WheelLeftSteps;
+	  WheelRightStepsLocal = SerialControlWheelsResponce.WheelRightSteps;
 
-//====================================================================
+	  WheelLeftStepsLocal *= 1;
+	  WheelRightStepsLocal *= 1;
 
-	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
+	  /*if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 100)
+	  	  {
+	  		  MX_UART4_Init();
+	  		  USART1ReceiveState = 0;
+	  		  HAL_UART_Receive_DMA(&huart4, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+	  		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
+	  }*/
+
+	  icm20948_gyro_read_dps(&my_gyro);
+	  icm20948_accel_read_g(&my_accel);
+	  ak09916_mag_read_uT(&my_mag);
+
+	  uncalibratedGyroscope.axis.x = my_gyro.x;
+	  uncalibratedGyroscope.axis.y = my_gyro.y;
+	  uncalibratedGyroscope.axis.z = my_gyro.z;
+
+	  uncalibratedAccelerometer.axis.x = my_accel.x;
+	  uncalibratedAccelerometer.axis.y = my_accel.y;
+	  uncalibratedAccelerometer.axis.z = my_accel.z;
+
+	  uncalibratedMagnetometer.axis.x = my_mag.x;
+	  uncalibratedMagnetometer.axis.y = my_mag.y;
+	  uncalibratedMagnetometer.axis.z = my_mag.z;
+
+	  FusionVector3 calibratedGyroscope = FusionCalibrationInertial(uncalibratedGyroscope, FUSION_ROTATION_MATRIX_IDENTITY, gyroscopeSensitivity, FUSION_VECTOR3_ZERO);
+	  FusionVector3 calibratedAccelerometer = FusionCalibrationInertial(uncalibratedAccelerometer, FUSION_ROTATION_MATRIX_IDENTITY, accelerometerSensitivity, FUSION_VECTOR3_ZERO);
+	  FusionVector3 calibratedMagnetometer = FusionCalibrationMagnetic(uncalibratedMagnetometer, FUSION_ROTATION_MATRIX_IDENTITY, hardIronBias);
+	  calibratedGyroscope = FusionBiasUpdate(&fusionBias, calibratedGyroscope);
+	  FusionAhrsUpdate(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, calibratedMagnetometer, samplePeriod);
+	  eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
+
+	  /*if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
 		  USART2ReceiveState = 0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
 
 		  PackageLastTimeReset_Motherboard = HAL_GetTick();
 	  }
-
-	  if ((USART3ReceiveState == 10) && (SerialArduinoGyroResponce.CR == 13) && (SerialArduinoGyroResponce.LF == 10))
-	  {
-		  USART3ReceiveState = 0;
-		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
-
-		  PackageLastTimeReset_GYRO = HAL_GetTick();
-
-		  GyroSource.Gravity.x = SerialArduinoGyroResponce.sRawGravity.X;
-		  GyroSource.Gravity.y = SerialArduinoGyroResponce.sRawGravity.Y;
-		  GyroSource.Gravity.z = SerialArduinoGyroResponce.sRawGravity.Z;
-
-		  GyroSource.GyroAcc.x = SerialArduinoGyroResponce.sRawGyroAcc.X;
-		  GyroSource.GyroAcc.y = SerialArduinoGyroResponce.sRawGyroAcc.Y;
-		  GyroSource.GyroAcc.z = SerialArduinoGyroResponce.sRawGyroAcc.Z;
-
-		  GyroSource.Accels.x = SerialArduinoGyroResponce.sRawAccels.X;
-		  GyroSource.Accels.y = SerialArduinoGyroResponce.sRawAccels.Y;
-		  GyroSource.Accels.z = SerialArduinoGyroResponce.sRawAccels.Z;
-
-		  GyroSource.LastPkgTime = PackageLastTimeReset_GYRO;
-	  }
-
-
 
 	  if ((USART1ReceiveState == 10) && (SerialOnBoardRequest.CR == 13) && (SerialOnBoardRequest.LF == 10))
 	  {
@@ -481,14 +379,19 @@ int main(void)
 		  SerialOnBoardResponce.CR = 13;
 		  SerialOnBoardResponce.LF = 10;
 
- 		  HAL_UART_Transmit_DMA(&huart1, (uint8_t*)SerialOnBoardResponce.Buffer, ON_BOARD_CONTROL_RESPONCE_SIZE);
+ 		  HAL_UART_Transmit_DMA(&huart4, (uint8_t*)SerialOnBoardResponce.Buffer, ON_BOARD_CONTROL_RESPONCE_SIZE);
 
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
-	  }
+	  }*/
 
-	  LoopLoadPkgUART2();
+	  SerialControlWheelsRequest.ControlMode = 0;
+	  SerialControlWheelsRequest.ParameterNumber = 0;
+	  SerialControlWheelsRequest.WheelLeft = 0.0;
+	  SerialControlWheelsRequest.WheelRight = 0.0;
+	  SerialControlWheelsRequest.CR=13;
+	  SerialControlWheelsRequest.LF=10;
 
-	  // Motherboard block end----------------------------------------------
+	  HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
 
     /* USER CODE END WHILE */
 
@@ -538,497 +441,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief ADC1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_ADC1_Init(void)
-{
-
-  /* USER CODE BEGIN ADC1_Init 0 */
-
-  /* USER CODE END ADC1_Init 0 */
-
-  ADC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN ADC1_Init 1 */
-
-  /* USER CODE END ADC1_Init 1 */
-  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
-  */
-  hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
-  */
-  sConfig.Channel = ADC_CHANNEL_2;
-  sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN ADC1_Init 2 */
-
-  /* USER CODE END ADC1_Init 2 */
-
-}
-
-/**
-  * @brief SPI1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI1_Init(void)
-{
-
-  /* USER CODE BEGIN SPI1_Init 0 */
-
-  /* USER CODE END SPI1_Init 0 */
-
-  /* USER CODE BEGIN SPI1_Init 1 */
-
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 10;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI1_Init 2 */
-
-  /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
-  * @brief TIM2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM2_Init(void)
-{
-
-  /* USER CODE BEGIN TIM2_Init 0 */
-
-  /* USER CODE END TIM2_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-
-  /* USER CODE BEGIN TIM2_Init 1 */
-
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 89;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM2_Init 2 */
-
-  /* USER CODE END TIM2_Init 2 */
-  HAL_TIM_MspPostInit(&htim2);
-
-}
-
-/**
-  * @brief TIM6 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM6_Init(void)
-{
-
-  /* USER CODE BEGIN TIM6_Init 0 */
-
-  /* USER CODE END TIM6_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM6_Init 1 */
-
-  /* USER CODE END TIM6_Init 1 */
-  htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 0;
-  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 65535;
-  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM6_Init 2 */
-
-  /* USER CODE END TIM6_Init 2 */
-
-}
-
-/**
-  * @brief TIM7 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM7_Init(void)
-{
-
-  /* USER CODE BEGIN TIM7_Init 0 */
-
-  /* USER CODE END TIM7_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM7_Init 1 */
-
-  /* USER CODE END TIM7_Init 1 */
-  htim7.Instance = TIM7;
-  htim7.Init.Prescaler = 0;
-  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim7.Init.Period = 65535;
-  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM7_Init 2 */
-
-  /* USER CODE END TIM7_Init 2 */
-
-}
-
-/**
-  * @brief TIM14 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM14_Init(void)
-{
-
-  /* USER CODE BEGIN TIM14_Init 0 */
-
-  /* USER CODE END TIM14_Init 0 */
-
-  TIM_OC_InitTypeDef sConfigOC = {0};
-
-  /* USER CODE BEGIN TIM14_Init 1 */
-
-  /* USER CODE END TIM14_Init 1 */
-  htim14.Instance = TIM14;
-  htim14.Init.Prescaler = 720;
-  htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim14.Init.Period = 2000;
-  htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim14) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_Init(&htim14) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 50;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim14, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM14_Init 2 */
-
-  /* USER CODE END TIM14_Init 2 */
-  HAL_TIM_MspPostInit(&htim14);
-
-}
-
-/**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
-
-}
-
-/**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 38400;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
-  * @brief USART3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART3_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART3_Init 0 */
-
-  /* USER CODE END USART3_Init 0 */
-
-  /* USER CODE BEGIN USART3_Init 1 */
-
-  /* USER CODE END USART3_Init 1 */
-  huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
-  huart3.Init.WordLength = UART_WORDLENGTH_8B;
-  huart3.Init.StopBits = UART_STOPBITS_1;
-  huart3.Init.Parity = UART_PARITY_NONE;
-  huart3.Init.Mode = UART_MODE_TX_RX;
-  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART3_Init 2 */
-
-  /* USER CODE END USART3_Init 2 */
-
-}
-
-/**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
-
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
-  __HAL_RCC_DMA2_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA1_Stream1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
-  /* DMA1_Stream3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
-  /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
-  /* DMA1_Stream6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
-  /* DMA2_Stream2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
-  /* DMA2_Stream7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
-
-}
-
-/**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(ICM20948_CS_GPIO_Port, ICM20948_CS_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, DRIVER_STEP_Pin|DRIVER_DIR_Pin|PLATFORM_PWR_ON_RELAY_Pin|PWR_STATION_RELAY_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, LED_0_Pin|LED_1_Pin|LED_2_Pin|LED_3_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : ICM20948_CS_Pin */
-  GPIO_InitStruct.Pin = ICM20948_CS_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(ICM20948_CS_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : J11_RESERVED_Pin J12_RESERVED_Pin J13_RESERVED_Pin J14_RESERVED_Pin
-                           J2_GYRO_SELECTOR_Pin J3_SERVO_SELECTOR_Pin J4_POWER_LOGIC_Pin J5_LED_LINE_Pin
-                           J6_IK_SENSORS_Pin J7_UART_PROTO_Pin J8_AUTO_PARKING_Pin J9_GYRO_STABLE_Pin
-                           J10_FACTORY_MODE_Pin */
-  GPIO_InitStruct.Pin = J11_RESERVED_Pin|J12_RESERVED_Pin|J13_RESERVED_Pin|J14_RESERVED_Pin
-                          |J2_GYRO_SELECTOR_Pin|J3_SERVO_SELECTOR_Pin|J4_POWER_LOGIC_Pin|J5_LED_LINE_Pin
-                          |J6_IK_SENSORS_Pin|J7_UART_PROTO_Pin|J8_AUTO_PARKING_Pin|J9_GYRO_STABLE_Pin
-                          |J10_FACTORY_MODE_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : BTN_2_PWR_ON_Pin J15_RESERVED_Pin */
-  GPIO_InitStruct.Pin = BTN_2_PWR_ON_Pin|J15_RESERVED_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : BTN_1_LED_Pin */
-  GPIO_InitStruct.Pin = BTN_1_LED_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(BTN_1_LED_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : DRIVER_STEP_Pin DRIVER_DIR_Pin PLATFORM_PWR_ON_RELAY_Pin PWR_STATION_RELAY_Pin */
-  GPIO_InitStruct.Pin = DRIVER_STEP_Pin|DRIVER_DIR_Pin|PLATFORM_PWR_ON_RELAY_Pin|PWR_STATION_RELAY_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : J1_SERVICE_LED_Pin */
-  GPIO_InitStruct.Pin = J1_SERVICE_LED_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(J1_SERVICE_LED_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : LED_0_Pin LED_1_Pin LED_2_Pin LED_3_Pin */
-  GPIO_InitStruct.Pin = LED_0_Pin|LED_1_Pin|LED_2_Pin|LED_3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
 }
 
 /* USER CODE BEGIN 4 */
