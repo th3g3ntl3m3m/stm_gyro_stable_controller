@@ -99,6 +99,8 @@ union {
 
 #define ON_BOARD_PC_DELAY_MS 100
 #define MOTHERBOARD_DELAY_MS 100
+
+#define MOTHERBOARD_DIFF 100
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -112,20 +114,34 @@ union {
 volatile uint8_t USART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
 volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
 
+float Voltage;
+float Battery;
+float CurrentLeft;
+float CurrentRight;
+float RPSLeft;
+float RPSRight;
+float OverCurrCount;
+float ConnErrCount;
+float CommTime;
+
 uint8_t* LostByte;
 
 uint32_t PackageLastTimeReset_Motherboard;
-uint32_t PackageLastTimeReset_GYRO;
 uint32_t PackageLastTimeReset_OnBoardPC;
 
-float Left;
-float Right;
+int ControlCommandTimeoutMS = 2000;
+
+float HallLeftStepPast = 0;
+float HallRightStepPast = 0;
+float HallLeftStep;
+float HallRightStep;
 
 uint8_t ParameterNumber;
 
-int CalibrateTimeMS = 3000;
-
-int CONTROLER_STATE = STATE_INIT;
+float BTFront = 0;
+float BTTurn = 0;
+float Front = 0;
+float Turn = 0;
 
 axises my_gyro;
 axises my_accel;
@@ -141,9 +157,6 @@ FusionVector3 uncalibratedGyroscope;
 FusionVector3 uncalibratedAccelerometer;
 FusionVector3 uncalibratedMagnetometer;
 FusionEulerAngles eulerAngles;
-
-int32_t WheelLeftStepsLocal;
-int32_t WheelRightStepsLocal;
 
 /* USER CODE END PV */
 
@@ -249,6 +262,87 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 		}
 	}
 }
+int HallActualize(float NewStep, float LastStep, float difference)
+{
+	float MIN_VAL = LastStep - difference;
+	float MAX_VAL = LastStep + difference;
+
+	if ((NewStep < MAX_VAL) && (NewStep > MIN_VAL))
+	{
+		return 1;
+	}
+	return 0;
+}
+void IMU_INIT()
+{
+	gyroscopeSensitivity.axis.x = 1.0f;
+	gyroscopeSensitivity.axis.y = 1.0f;
+	gyroscopeSensitivity.axis.z = 1.0f;
+
+	accelerometerSensitivity.axis.x = 1.0f;
+	accelerometerSensitivity.axis.y = 1.0f;
+	accelerometerSensitivity.axis.z = 1.0f;
+
+	hardIronBias.axis.x = 0.0f;
+	hardIronBias.axis.y = 0.0f;
+	hardIronBias.axis.z = 0.0f;
+
+	FusionBiasInitialise(&fusionBias, 0.5f, samplePeriod);
+	FusionAhrsInitialise(&fusionAhrs, 0.5f);
+}
+void IMU_UPDATE()
+{
+	icm20948_gyro_read_dps(&my_gyro);
+	icm20948_accel_read_g(&my_accel);
+	ak09916_mag_read_uT(&my_mag);
+
+	uncalibratedGyroscope.axis.x = my_gyro.x;
+	uncalibratedGyroscope.axis.y = my_gyro.y;
+	uncalibratedGyroscope.axis.z = my_gyro.z;
+
+	uncalibratedAccelerometer.axis.x = my_accel.x;
+	uncalibratedAccelerometer.axis.y = my_accel.y;
+	uncalibratedAccelerometer.axis.z = my_accel.z;
+
+	uncalibratedMagnetometer.axis.x = my_mag.x;
+	uncalibratedMagnetometer.axis.y = my_mag.y;
+	uncalibratedMagnetometer.axis.z = my_mag.z;
+
+	FusionVector3 calibratedGyroscope = FusionCalibrationInertial(uncalibratedGyroscope, FUSION_ROTATION_MATRIX_IDENTITY, gyroscopeSensitivity, FUSION_VECTOR3_ZERO);
+	FusionVector3 calibratedAccelerometer = FusionCalibrationInertial(uncalibratedAccelerometer, FUSION_ROTATION_MATRIX_IDENTITY, accelerometerSensitivity, FUSION_VECTOR3_ZERO);
+	FusionVector3 calibratedMagnetometer = FusionCalibrationMagnetic(uncalibratedMagnetometer, FUSION_ROTATION_MATRIX_IDENTITY, hardIronBias);
+	calibratedGyroscope = FusionBiasUpdate(&fusionBias, calibratedGyroscope);
+	FusionAhrsUpdate(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, calibratedMagnetometer, samplePeriod);
+	eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
+}
+void SERIAL_CONTROL_LOOP()
+{
+	SerialControlWheelsRequest.ControlMode = 0;
+	SerialControlWheelsRequest.ParameterNumber = 0;
+	SerialControlWheelsRequest.WheelLeft = 0.0;
+	SerialControlWheelsRequest.WheelRight = 0.0;
+	SerialControlWheelsRequest.CR=13;
+	SerialControlWheelsRequest.LF=10;
+	HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
+}
+void BALANCE_Prepare()
+{
+	Front = BTFront;
+	Turn = BTTurn;
+}
+float Interpolation(float Value, float Min, float Max)
+{
+    float Result = (Value - Min) / (Max - Min);
+    if (Result > 1)
+    {
+        return 1;
+    }
+    if (Result < 0)
+    {
+        return 0;
+    }
+    return Result;
+}
 /* USER CODE END 0 */
 
 /**
@@ -274,20 +368,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  gyroscopeSensitivity.axis.x = 1.0f;
-  gyroscopeSensitivity.axis.y = 1.0f;
-  gyroscopeSensitivity.axis.z = 1.0f;
 
-  accelerometerSensitivity.axis.x = 1.0f;
-  accelerometerSensitivity.axis.y = 1.0f;
-  accelerometerSensitivity.axis.z = 1.0f;
-
-  hardIronBias.axis.x = 0.0f;
-  hardIronBias.axis.y = 0.0f;
-  hardIronBias.axis.z = 0.0f;
-
-  FusionBiasInitialise(&fusionBias, 0.5f, samplePeriod);
-  FusionAhrsInitialise(&fusionAhrs, 0.5f);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -304,12 +385,15 @@ int main(void)
   /* USER CODE BEGIN 2 */
   icm20948_init();
   ak09916_init ();
+  IMU_INIT();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  IMU_UPDATE();
+
 	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100) // UART2 RECEIVE FEEDBACK
 	  {
 		  MX_USART2_UART_Init();
@@ -318,52 +402,62 @@ int main(void)
 		  PackageLastTimeReset_Motherboard = HAL_GetTick();
 	  }
 
-	  WheelLeftStepsLocal = SerialControlWheelsResponce.WheelLeftSteps;
-	  WheelRightStepsLocal = SerialControlWheelsResponce.WheelRightSteps;
-
-	  WheelLeftStepsLocal *= 1;
-	  WheelRightStepsLocal *= 1;
-
-	  /*if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 100)
-	  	  {
-	  		  MX_UART4_Init();
-	  		  USART1ReceiveState = 0;
-	  		  HAL_UART_Receive_DMA(&huart4, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
-	  		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
-	  }*/
-
-	  icm20948_gyro_read_dps(&my_gyro);
-	  icm20948_accel_read_g(&my_accel);
-	  ak09916_mag_read_uT(&my_mag);
-
-	  uncalibratedGyroscope.axis.x = my_gyro.x;
-	  uncalibratedGyroscope.axis.y = my_gyro.y;
-	  uncalibratedGyroscope.axis.z = my_gyro.z;
-
-	  uncalibratedAccelerometer.axis.x = my_accel.x;
-	  uncalibratedAccelerometer.axis.y = my_accel.y;
-	  uncalibratedAccelerometer.axis.z = my_accel.z;
-
-	  uncalibratedMagnetometer.axis.x = my_mag.x;
-	  uncalibratedMagnetometer.axis.y = my_mag.y;
-	  uncalibratedMagnetometer.axis.z = my_mag.z;
-
-	  FusionVector3 calibratedGyroscope = FusionCalibrationInertial(uncalibratedGyroscope, FUSION_ROTATION_MATRIX_IDENTITY, gyroscopeSensitivity, FUSION_VECTOR3_ZERO);
-	  FusionVector3 calibratedAccelerometer = FusionCalibrationInertial(uncalibratedAccelerometer, FUSION_ROTATION_MATRIX_IDENTITY, accelerometerSensitivity, FUSION_VECTOR3_ZERO);
-	  FusionVector3 calibratedMagnetometer = FusionCalibrationMagnetic(uncalibratedMagnetometer, FUSION_ROTATION_MATRIX_IDENTITY, hardIronBias);
-	  calibratedGyroscope = FusionBiasUpdate(&fusionBias, calibratedGyroscope);
-	  FusionAhrsUpdate(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, calibratedMagnetometer, samplePeriod);
-	  eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
-
-	  /*if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
+	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
 		  USART2ReceiveState = 0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
 
+		  if (HallActualize(SerialControlWheelsResponce.WheelLeftSteps, HallLeftStepPast, MOTHERBOARD_DIFF))
+		  {
+			  HallLeftStep = SerialControlWheelsResponce.WheelLeftSteps;
+		  }
+		  else
+		  {
+			  HallLeftStep = HallLeftStepPast;
+		  }
+
+		  if (HallActualize(SerialControlWheelsResponce.WheelRightSteps, HallRightStepPast, MOTHERBOARD_DIFF))
+		  {
+			  HallRightStep = SerialControlWheelsResponce.WheelRightSteps;
+		  }
+		  else
+		  {
+			  HallRightStep = HallRightStepPast;
+		  }
+
 		  PackageLastTimeReset_Motherboard = HAL_GetTick();
+
+		  switch (SerialControlWheelsResponce.ParameterNumber)
+		  {
+		  case 0:
+			  Voltage = SerialControlWheelsResponce.ParameterValue;
+			  Battery += ((Interpolation(Voltage, 28, 41) * 100.0) - Battery) * 0.01;
+			  break;
+		  case 1:
+			  CurrentLeft = SerialControlWheelsResponce.ParameterValue;
+		      break;
+		  case 2:
+		      CurrentRight = SerialControlWheelsResponce.ParameterValue;
+		      break;
+		  case 3:
+		      RPSLeft = SerialControlWheelsResponce.ParameterValue;
+		      break;
+		  case 4:
+		      RPSRight = SerialControlWheelsResponce.ParameterValue;
+		      break;
+		  case 5:
+		      OverCurrCount = SerialControlWheelsResponce.ParameterValue;
+		      break;
+		  case 6:
+		      ConnErrCount = SerialControlWheelsResponce.ParameterValue;
+		      break;
+		  case 7:
+		      CommTime = SerialControlWheelsResponce.ParameterValue;
+		      break;
+		  }
 	  }
 
-	  if ((USART1ReceiveState == 10) && (SerialOnBoardRequest.CR == 13) && (SerialOnBoardRequest.LF == 10))
+	  /*if ((USART1ReceiveState == 10) && (SerialOnBoardRequest.CR == 13) && (SerialOnBoardRequest.LF == 10))
 	  {
 		  USART1ReceiveState = 0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_14);
@@ -384,14 +478,7 @@ int main(void)
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
 	  }*/
 
-	  SerialControlWheelsRequest.ControlMode = 0;
-	  SerialControlWheelsRequest.ParameterNumber = 0;
-	  SerialControlWheelsRequest.WheelLeft = 0.0;
-	  SerialControlWheelsRequest.WheelRight = 0.0;
-	  SerialControlWheelsRequest.CR=13;
-	  SerialControlWheelsRequest.LF=10;
-
-	  HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
+	  SERIAL_CONTROL_LOOP();
 
     /* USER CODE END WHILE */
 
