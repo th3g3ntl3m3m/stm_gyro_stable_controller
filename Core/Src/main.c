@@ -143,6 +143,13 @@ float BTTurn = 0;
 float Front = 0;
 float Turn = 0;
 
+float SpeedLinear;
+float LeftSpeed;
+float RightSpeed;
+
+uint8_t BalanceActiveDemand;
+uint8_t BTBalanceActive;
+
 axises my_gyro;
 axises my_accel;
 axises my_mag;
@@ -329,6 +336,28 @@ void BALANCE_Prepare()
 {
 	Front = BTFront;
 	Turn = BTTurn;
+
+	if (Battery < 4)
+	{
+		Front = 0;
+		Turn = 0;
+	}
+
+	if ((fabsf(Front) < 0.001) && (fabsf(Turn) < 0.001) && (fabsf(SpeedLinear) < 0.02) && (fabsf(LeftSpeed - RightSpeed) < 0.02))
+	{
+		if ((Battery < 4) && (BalanceActiveDemand))
+		{
+			BalanceActiveDemand = false;
+		}
+		else if (Battery > 8)
+		{
+			BalanceActiveDemand = BTBalanceActive;
+		}
+		else if (!BTBalanceActive)
+		{
+			BalanceActiveDemand = false;
+		}
+	}
 }
 float Interpolation(float Value, float Min, float Max)
 {
@@ -477,6 +506,8 @@ int main(void)
 
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
 	  }*/
+
+
 
 	  SERIAL_CONTROL_LOOP();
 
