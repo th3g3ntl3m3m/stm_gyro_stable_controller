@@ -358,6 +358,11 @@ void BALANCE_Prepare()
 			BalanceActiveDemand = false;
 		}
 	}
+
+	Turn = (Turn > 90) ? 90 : Turn;
+	Turn = (Turn < -90) ? -90 : Turn;
+	Front = (Front > 2) ? 2 : Front;
+	Front = (Front < -0.4) ? -0.4 : Front;
 }
 float Interpolation(float Value, float Min, float Max)
 {
