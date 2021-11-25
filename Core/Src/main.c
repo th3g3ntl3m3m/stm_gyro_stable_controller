@@ -104,6 +104,11 @@ union {
 
 #define PARKING_SPEED_DRIVE 15
 #define PARKING_SPEED_PARKING 20;
+
+#define PARKING_MAX 1000
+
+#define SPEED_STEPS_MAX_TIME 0.2
+#define STEPS_TO_METERS 0.0088495575221239
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -126,6 +131,29 @@ float RPSRight;
 float OverCurrCount;
 float ConnErrCount;
 float CommTime;
+
+float PositionIValue;
+float SpeedLinearDemand;
+float PositionPID;
+float RotationPID;
+int32_t StepsLeftPrevious;
+int32_t StepsRightPrevious;
+unsigned long StepsLeftPreviousTime;
+unsigned long StepsRightPreviousTime;
+float LeftSpeed;
+float RightSpeed;
+float SpeedPID;
+float PlatformYDemand = 0;
+float GyroY;
+float GyroYPrevious;
+float GyroYSpeed;
+float GyroZPrevious;
+float GyroZSpeed;
+float BalancePID;
+float DutyFront;
+float DutyTurn;
+float ResultLeft;
+float ResultRight;
 
 int16_t ParkingPersentage;
 uint8_t FootAngleDemand;
@@ -156,6 +184,7 @@ float Turn = 0;
 float SpeedLinear;
 float LeftSpeed;
 float RightSpeed;
+float PositionLinear;
 
 uint8_t BalanceActiveDemand;
 uint8_t BTBalanceActive;
@@ -376,32 +405,43 @@ void BALANCE_Prepare()
 
 	// Point to add IK sensor
 
-	if (BalanceActiveDemand)
+	// Point to add ParkingMode
+}
+
+void BALANCE_Calculate_Speeds()
+{
+	//LEFT
+	float TimeS = (HAL_GetTick() - StepsLeftPreviousTime) / 1000.0;
+	if (TimeS > SPEED_STEPS_MAX_TIME)
 	{
-		if (ParkingPersentage == 0)
-		{
-			FootAngleDemand = FootDrive;
-		}
-		ParkingPersentage -= PARKING_SPEED_DRIVE;
+		TimeS = SPEED_STEPS_MAX_TIME;
+	    LeftSpeed = 0;
 	}
-	else
+	if (HallLeftStep != StepsLeftPrevious)
 	{
-		FootAngleDemand = FootParking;
-		if ((FootAngle == FootAngleDemand) && (!FootActive))
-		{
-			ParkingPersentage += PARKING_SPEED_PARKING;
-		}
+		LeftSpeed = ((HallLeftStep - StepsLeftPrevious) * STEPS_TO_METERS) / TimeS;
+	    StepsLeftPrevious = HallLeftStep;
+	    StepsLeftPreviousTime = HAL_GetTick();
 	}
 
-	ParkingPersentage = ParkingPersentage < 0 ? 0 : ParkingPersentage;
-	ParkingPersentage = ParkingPersentage > PARKING_MAX ? PARKING_MAX : ParkingPersentage;
-
-	ParkingAngle = Interpolation(ParkingPersentage, 0, PARKING_DISABLE) * PARKING_ANGLE;
-	BalanceActive = ParkingPersentage < PARKING_MAX;
-	if (ParkingPersentage > 0)
+	//RIGHT
+	TimeS = (HAL_GetTick() - StepsRightPreviousTime) / 1000.0;
+	if (TimeS > SPEED_STEPS_MAX_TIME)
 	{
-		PositionLinearDemand = PositionLinear;
+		TimeS = SPEED_STEPS_MAX_TIME;
+	    RightSpeed = 0;
 	}
+	if (HallRightStep != StepsRightPrevious)
+	{
+		RightSpeed = ((HallRightStep - StepsRightPrevious) * STEPS_TO_METERS) / TimeS;
+	    StepsRightPrevious = HallRightStep;
+	    StepsRightPreviousTime = HAL_GetTick();
+	}
+
+	PositionLinear = ((HallLeftStep + HallRightStep) / 2) * STEPS_TO_METERS;
+	SpeedLinear = (LeftSpeed + RightSpeed) / 2.0;
+}
+
 float Interpolation(float Value, float Min, float Max)
 {
     float Result = (Value - Min) / (Max - Min);
@@ -415,6 +455,7 @@ float Interpolation(float Value, float Min, float Max)
     }
     return Result;
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -482,6 +523,7 @@ int main(void)
 		  if (HallActualize(SerialControlWheelsResponce.WheelLeftSteps, HallLeftStepPast, MOTHERBOARD_DIFF))
 		  {
 			  HallLeftStep = SerialControlWheelsResponce.WheelLeftSteps;
+			  HallLeftStepPast = HallLeftStep;
 		  }
 		  else
 		  {
@@ -491,6 +533,7 @@ int main(void)
 		  if (HallActualize(SerialControlWheelsResponce.WheelRightSteps, HallRightStepPast, MOTHERBOARD_DIFF))
 		  {
 			  HallRightStep = SerialControlWheelsResponce.WheelRightSteps;
+			  HallRightStepPast = HallRightStep;
 		  }
 		  else
 		  {
@@ -550,7 +593,8 @@ int main(void)
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
 	  }*/
 
-
+	  BALANCE_Prepare();
+	  BALANCE_Calculate_Speeds();
 
 	  SERIAL_CONTROL_LOOP();
 
