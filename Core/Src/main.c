@@ -30,6 +30,7 @@
 /* USER CODE BEGIN Includes */
 #include "icm20948.h"
 #include "Fusion.h"
+#include "stdlib.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -109,6 +110,10 @@ union {
 
 #define SPEED_STEPS_MAX_TIME 0.2
 #define STEPS_TO_METERS 0.0088495575221239
+
+#define PLATFORM_Y_MAX 5
+#define DUTY_MAX_ANGULAR 0.1
+#define DUTY_MAX_LINEAR 0.15
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -154,7 +159,39 @@ float DutyFront;
 float DutyTurn;
 float ResultLeft;
 float ResultRight;
+float PositionLinearDemand;
+float PositionAngularDemand;
 
+float PositionI = 0.0;
+float PositionP = 0.6;
+float RotationP = 0.004;
+float RotationD = 0.01;
+
+float SpeedPNew = 9;
+float SpeedINew = 1.5;
+float SpeedDNew = 0.7;
+
+float AngleCorrection = 0;
+float ParkingAngle;
+
+float BalanceP = 1000;
+float BalanceD = 30000;
+
+float ManualDrive = 0;
+float RotationI = 0;
+float BalanceFilter = 0.9;
+float SpeedFilter = 0.015;
+float linearIntegral = 0;
+float linearLastError = 0;
+float linearFcutDiff = 40.0f;
+float linearSmoothDiff = 0;
+uint32_t linearTime = 0;
+float linearDeltaTimePrev = 0;
+float minLinearValue = 0.05;
+int linearIntegralerrorCoun = 0;
+
+uint8_t PositionLinearControlSwitch;
+uint8_t BalanceActive;
 int16_t ParkingPersentage;
 uint8_t FootAngleDemand;
 uint8_t FootDrive;
@@ -406,6 +443,9 @@ void BALANCE_Prepare()
 	// Point to add IK sensor
 
 	// Point to add ParkingMode
+
+	BalanceActive = BTBalanceActive;
+	PositionLinearDemand = PositionLinear;
 }
 
 void BALANCE_Calculate_Speeds()
@@ -440,6 +480,167 @@ void BALANCE_Calculate_Speeds()
 
 	PositionLinear = ((HallLeftStep + HallRightStep) / 2) * STEPS_TO_METERS;
 	SpeedLinear = (LeftSpeed + RightSpeed) / 2.0;
+}
+
+void BALANCE_Position_Linear_Control()
+{
+	if (fabsf(Front) > 0.001)
+	{
+		PositionLinearControlSwitch = 0;
+	}
+	else if (fabsf(SpeedLinear) < 0.02)
+	{
+		PositionLinearControlSwitch = 1;
+	}
+
+	if (BalanceActive)
+	{
+		float Error = PositionLinearDemand - PositionLinear;
+	    if (Error > 0)
+	    {
+	    	PositionIValue += PositionI;
+	    }
+	    else
+	    {
+	    	PositionIValue -= PositionI;
+	    }
+
+	    PositionPID = Error * PositionP + PositionIValue;
+	    if (PositionLinearControlSwitch)
+	    {
+	    	SpeedLinearDemand = PositionPID;
+	    }
+	    else
+	    {
+	        SpeedLinearDemand = Front;
+	        PositionLinearDemand = PositionLinear;
+	        PositionIValue = 0;
+	    }
+	}
+	else
+	{
+		PositionLinearDemand = PositionLinear;
+	    PositionIValue = 0;
+	}
+}
+
+void BALANCE_Speed_LinearControl()
+{
+	float deltaTime = (HAL_GetTick() - linearTime) / 1000000.0;
+	linearTime = HAL_GetTick();
+
+	if (deltaTime < 0)
+	{
+		deltaTime = linearDeltaTimePrev;
+	}
+	linearDeltaTimePrev = deltaTime;
+
+	SpeedLinearDemand = SpeedLinearDemand > PLATFORM_Y_MAX ? PLATFORM_Y_MAX : SpeedLinearDemand;
+	SpeedLinearDemand = SpeedLinearDemand < -PLATFORM_Y_MAX ? -PLATFORM_Y_MAX : SpeedLinearDemand;
+
+	if (BalanceActive)
+	{
+	    float linearError = SpeedLinearDemand - SpeedLinear;
+
+	    if ((SpeedLinearDemand * linearIntegral > 0) && (abs(SpeedLinear) > abs(SpeedLinearDemand * 1.5)))
+	    {
+	        linearIntegralerrorCoun++;
+	    }
+	    else
+	    {
+	        linearIntegralerrorCoun = 0;
+	    }
+	    float diff = (linearError - linearLastError) / deltaTime;
+	    linearLastError = linearError;
+	    float RC = 1.0f / linearFcutDiff;
+	    float kExp = deltaTime / (RC + deltaTime);
+	    linearSmoothDiff = (1.0f - kExp) * linearSmoothDiff + kExp * diff;
+
+	    linearIntegral += linearError * deltaTime;
+	    if ((SpeedLinearDemand < minLinearValue) && (SpeedLinearDemand > -minLinearValue))
+	    {
+	        linearIntegral = 0;
+	    }
+
+	    if (linearIntegralerrorCoun > 3)
+	    {
+	        linearIntegral = 0;
+	    }
+	    SpeedPID = linearError * SpeedPNew + linearIntegral * SpeedINew + linearSmoothDiff * SpeedDNew;
+
+	    PlatformYDemand += ((SpeedPID / 1.0) - PlatformYDemand) * SpeedFilter;
+
+	    PlatformYDemand = (PlatformYDemand > PLATFORM_Y_MAX) ? PLATFORM_Y_MAX : PlatformYDemand;
+	    PlatformYDemand = (PlatformYDemand < -PLATFORM_Y_MAX) ? -PLATFORM_Y_MAX : PlatformYDemand;
+	}
+	else
+	{
+	    SpeedLinearDemand = 0;
+	    linearIntegral = 0;
+	}
+}
+
+void BALANCE_Position_Angular_Control()
+{
+	GyroZSpeed = eulerAngles.angle.yaw - GyroZPrevious;
+	GyroZPrevious = eulerAngles.angle.yaw;
+	if (BalanceActive)
+	{
+	    PositionAngularDemand -= Turn / 100.0;
+
+	    RotationPID = (eulerAngles.angle.yaw - PositionAngularDemand) * RotationP + GyroZSpeed * RotationD;
+	    DutyTurn = RotationPID;
+	}
+	else
+	{
+	    PositionAngularDemand = eulerAngles.angle.yaw;
+	    DutyTurn = 0;
+	}
+	DutyTurn = (DutyTurn > DUTY_MAX_ANGULAR) ? DUTY_MAX_ANGULAR : DutyTurn;
+	DutyTurn = (DutyTurn < -DUTY_MAX_ANGULAR) ? -DUTY_MAX_ANGULAR : DutyTurn;
+}
+
+void BALANCE_LOOP()
+{
+	GyroY = eulerAngles.angle.pitch + PlatformYDemand + AngleCorrection - ParkingAngle;
+
+	GyroYSpeed = GyroY - GyroYPrevious;
+	GyroYPrevious = GyroY;
+
+	if (BalanceActive)
+	{
+	    BalancePID = -GyroY * (float)BalanceP - GyroYSpeed * (float)BalanceD;
+
+	    DutyFront += BalancePID * 0.000001;
+
+	    DutyFront = (DutyFront > DUTY_MAX_LINEAR) ? DUTY_MAX_LINEAR : DutyFront;
+	    DutyFront = (DutyFront < -DUTY_MAX_LINEAR) ? -DUTY_MAX_LINEAR : DutyFront;
+	}
+	else
+	{
+	    PlatformYDemand = 0;
+	    DutyFront = 0;
+	}
+}
+
+void BALANCE_Result_Loop()
+{
+	ResultLeft += ((DutyFront + DutyTurn) - ResultLeft) * BalanceFilter;
+	ResultRight += ((DutyFront - DutyTurn) - ResultRight) * BalanceFilter;
+
+	SerialControlWheelsRequest.WheelLeft = ResultLeft;
+	SerialControlWheelsRequest.WheelRight = ResultRight;
+
+	SerialControlWheelsRequest.WheelLeft += RotationI * (BTFront);
+	SerialControlWheelsRequest.WheelRight += RotationI * (BTFront);
+	SerialControlWheelsRequest.WheelLeft += ManualDrive;
+	SerialControlWheelsRequest.WheelRight += ManualDrive;
+
+	if (eulerAngles.angle.pitch + AngleCorrection > 20)
+	{
+	    SerialControlWheelsRequest.WheelLeft = 0;
+	    SerialControlWheelsRequest.WheelRight = 0;
+	}
 }
 
 float Interpolation(float Value, float Min, float Max)
@@ -595,6 +796,10 @@ int main(void)
 
 	  BALANCE_Prepare();
 	  BALANCE_Calculate_Speeds();
+	  BALANCE_Speed_LinearControl();
+	  BALANCE_Position_Angular_Control();
+	  BALANCE_LOOP();
+	  BALANCE_Result_Loop();
 
 	  SERIAL_CONTROL_LOOP();
 
