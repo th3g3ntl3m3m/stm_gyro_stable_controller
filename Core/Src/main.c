@@ -203,6 +203,7 @@ uint8_t* LostByte;
 
 uint32_t PackageLastTimeReset_Motherboard;
 uint32_t PackageLastTimeReset_OnBoardPC;
+uint32_t LastUpdateIMU;
 
 int ControlCommandTimeoutMS = 2000;
 
@@ -377,7 +378,7 @@ void IMU_UPDATE()
 {
 	icm20948_gyro_read_dps(&my_gyro);
 	icm20948_accel_read_g(&my_accel);
-	ak09916_mag_read_uT(&my_mag);
+	//ak09916_mag_read_uT(&my_mag);
 
 	uncalibratedGyroscope.axis.x = my_gyro.x;
 	uncalibratedGyroscope.axis.y = my_gyro.y;
@@ -387,15 +388,17 @@ void IMU_UPDATE()
 	uncalibratedAccelerometer.axis.y = my_accel.y;
 	uncalibratedAccelerometer.axis.z = my_accel.z;
 
-	uncalibratedMagnetometer.axis.x = my_mag.x;
-	uncalibratedMagnetometer.axis.y = my_mag.y;
-	uncalibratedMagnetometer.axis.z = my_mag.z;
+	//uncalibratedMagnetometer.axis.x = my_mag.x;
+	//uncalibratedMagnetometer.axis.y = my_mag.y;
+	//uncalibratedMagnetometer.axis.z = my_mag.z;
 
 	FusionVector3 calibratedGyroscope = FusionCalibrationInertial(uncalibratedGyroscope, FUSION_ROTATION_MATRIX_IDENTITY, gyroscopeSensitivity, FUSION_VECTOR3_ZERO);
 	FusionVector3 calibratedAccelerometer = FusionCalibrationInertial(uncalibratedAccelerometer, FUSION_ROTATION_MATRIX_IDENTITY, accelerometerSensitivity, FUSION_VECTOR3_ZERO);
-	FusionVector3 calibratedMagnetometer = FusionCalibrationMagnetic(uncalibratedMagnetometer, FUSION_ROTATION_MATRIX_IDENTITY, hardIronBias);
+	//FusionVector3 calibratedMagnetometer = FusionCalibrationMagnetic(uncalibratedMagnetometer, FUSION_ROTATION_MATRIX_IDENTITY, hardIronBias);
+
 	calibratedGyroscope = FusionBiasUpdate(&fusionBias, calibratedGyroscope);
-	FusionAhrsUpdate(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, calibratedMagnetometer, samplePeriod);
+	FusionAhrsUpdateWithoutMagnetometer(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, samplePeriod);
+	//FusionAhrsUpdate(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, calibratedMagnetometer, samplePeriod);
 	eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
 }
 void SERIAL_CONTROL_LOOP()
@@ -698,7 +701,7 @@ int main(void)
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
   icm20948_init();
-  ak09916_init ();
+  ak09916_init();
   IMU_INIT();
   /* USER CODE END 2 */
 
@@ -706,7 +709,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  IMU_UPDATE();
+	  if (HAL_GetTick() - LastUpdateIMU > 100)
+	  {
+		  IMU_UPDATE();
+		  LastUpdateIMU = HAL_GetTick();
+	  }
 
 	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100) // UART2 RECEIVE FEEDBACK
 	  {
