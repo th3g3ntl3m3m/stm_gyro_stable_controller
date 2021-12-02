@@ -114,6 +114,18 @@ union {
 #define PLATFORM_Y_MAX 5
 #define DUTY_MAX_ANGULAR 0.1
 #define DUTY_MAX_LINEAR 0.15
+
+#define ADC_CH_COUNT 10
+
+#define DELAY_LEN 48 //48
+#define LED_COUNT 32
+#define HIGH 68  //65
+#define LOW 24	//26
+#define ARRAY_LEN DELAY_LEN+LED_COUNT*24
+#define BitIsSet(reg, bit) ((reg & (1<<bit))!=0)
+#define MAX_BRIGHTNESS 50
+uint32_t BUF_DMA[ARRAY_LEN]={0};
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -126,6 +138,10 @@ union {
 /* USER CODE BEGIN PV */
 volatile uint8_t USART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
 volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
+
+//global for debug
+float TimeS;
+//----------------
 
 float Voltage;
 float Battery;
@@ -174,8 +190,8 @@ float SpeedDNew = 0.7;
 float AngleCorrection = 0;
 float ParkingAngle;
 
-float BalanceP = 1000;
-float BalanceD = 30000;
+float BalanceP = 600;
+float BalanceD = 15000;
 
 float ManualDrive = 0;
 float RotationI = 0;
@@ -204,9 +220,12 @@ uint8_t* LostByte;
 uint32_t PackageLastTimeReset_Motherboard;
 uint32_t PackageLastTimeReset_OnBoardPC;
 uint32_t LastUpdateIMU;
+uint32_t LastUpdateLogic;
+uint32_t LastUpdateADC;
 
 int ControlCommandTimeoutMS = 2000;
 
+uint8_t InititionHall = 0;
 float HallLeftStepPast = 0;
 float HallRightStepPast = 0;
 float HallLeftStep;
@@ -233,7 +252,7 @@ axises my_mag;
 
 FusionBias fusionBias;
 FusionAhrs fusionAhrs;
-float samplePeriod = 0.1f;
+float samplePeriod = 0.01f;
 FusionVector3 gyroscopeSensitivity;
 FusionVector3 accelerometerSensitivity;
 FusionVector3 hardIronBias;
@@ -242,12 +261,24 @@ FusionVector3 uncalibratedAccelerometer;
 FusionVector3 uncalibratedMagnetometer;
 FusionEulerAngles eulerAngles;
 
+uint16_t ADC_VAL[ADC_CH_COUNT] = {0,};
+
+uint8_t debug_driver_en = 0;
+uint8_t debug_direction = 0;
+uint32_t debug_steps = 200;
+uint32_t debug_period = 1600;
+
+uint8_t debug_led_en = 0;
+uint8_t debug_led_mode = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void ADC_Select_CH(uint8_t ChanelNum);
+void ADC_Update();
+void StepControl(uint8_t dir, uint32_t period, uint32_t steps);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -405,8 +436,8 @@ void SERIAL_CONTROL_LOOP()
 {
 	SerialControlWheelsRequest.ControlMode = 0;
 	SerialControlWheelsRequest.ParameterNumber = 0;
-	SerialControlWheelsRequest.WheelLeft = 0.0;
-	SerialControlWheelsRequest.WheelRight = 0.0;
+	SerialControlWheelsRequest.WheelLeft = BTFront;
+	SerialControlWheelsRequest.WheelRight = BTTurn;
 	SerialControlWheelsRequest.CR=13;
 	SerialControlWheelsRequest.LF=10;
 	HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
@@ -416,13 +447,13 @@ void BALANCE_Prepare()
 	Front = BTFront;
 	Turn = BTTurn;
 
-	if (Battery < 4)
+	/*if (Battery < 4)
 	{
 		Front = 0;
 		Turn = 0;
-	}
+	}*/
 
-	if ((fabsf(Front) < 0.001) && (fabsf(Turn) < 0.001) && (fabsf(SpeedLinear) < 0.02) && (fabsf(LeftSpeed - RightSpeed) < 0.02))
+	/*if ((fabsf(Front) < 0.001) && (fabsf(Turn) < 0.001) && (fabsf(SpeedLinear) < 0.02) && (fabsf(LeftSpeed - RightSpeed) < 0.02))
 	{
 		if ((Battery < 4) && (BalanceActiveDemand))
 		{
@@ -436,7 +467,7 @@ void BALANCE_Prepare()
 		{
 			BalanceActiveDemand = false;
 		}
-	}
+	}*/
 
 	Turn = (Turn > 90) ? 90 : Turn;
 	Turn = (Turn < -90) ? -90 : Turn;
@@ -447,14 +478,14 @@ void BALANCE_Prepare()
 
 	// Point to add ParkingMode
 
+	BalanceActiveDemand = BTBalanceActive;
 	BalanceActive = BTBalanceActive;
 	PositionLinearDemand = PositionLinear;
 }
-
 void BALANCE_Calculate_Speeds()
 {
 	//LEFT
-	float TimeS = (HAL_GetTick() - StepsLeftPreviousTime) / 1000.0;
+	TimeS = (HAL_GetTick() - StepsLeftPreviousTime) / 1000.0;
 	if (TimeS > SPEED_STEPS_MAX_TIME)
 	{
 		TimeS = SPEED_STEPS_MAX_TIME;
@@ -484,7 +515,6 @@ void BALANCE_Calculate_Speeds()
 	PositionLinear = ((HallLeftStep + HallRightStep) / 2) * STEPS_TO_METERS;
 	SpeedLinear = (LeftSpeed + RightSpeed) / 2.0;
 }
-
 void BALANCE_Position_Linear_Control()
 {
 	if (fabsf(Front) > 0.001)
@@ -526,7 +556,6 @@ void BALANCE_Position_Linear_Control()
 	    PositionIValue = 0;
 	}
 }
-
 void BALANCE_Speed_LinearControl()
 {
 	float deltaTime = (HAL_GetTick() - linearTime) / 1000000.0;
@@ -582,7 +611,6 @@ void BALANCE_Speed_LinearControl()
 	    linearIntegral = 0;
 	}
 }
-
 void BALANCE_Position_Angular_Control()
 {
 	GyroZSpeed = eulerAngles.angle.yaw - GyroZPrevious;
@@ -602,10 +630,9 @@ void BALANCE_Position_Angular_Control()
 	DutyTurn = (DutyTurn > DUTY_MAX_ANGULAR) ? DUTY_MAX_ANGULAR : DutyTurn;
 	DutyTurn = (DutyTurn < -DUTY_MAX_ANGULAR) ? -DUTY_MAX_ANGULAR : DutyTurn;
 }
-
 void BALANCE_LOOP()
 {
-	GyroY = eulerAngles.angle.pitch + PlatformYDemand + AngleCorrection - ParkingAngle;
+	GyroY = (eulerAngles.angle.pitch * -1) + PlatformYDemand + AngleCorrection - ParkingAngle;
 
 	GyroYSpeed = GyroY - GyroYPrevious;
 	GyroYPrevious = GyroY;
@@ -625,7 +652,6 @@ void BALANCE_LOOP()
 	    DutyFront = 0;
 	}
 }
-
 void BALANCE_Result_Loop()
 {
 	ResultLeft += ((DutyFront + DutyTurn) - ResultLeft) * BalanceFilter;
@@ -645,7 +671,6 @@ void BALANCE_Result_Loop()
 	    SerialControlWheelsRequest.WheelRight = 0;
 	}
 }
-
 float Interpolation(float Value, float Min, float Max)
 {
     float Result = (Value - Min) / (Max - Min);
@@ -659,7 +684,212 @@ float Interpolation(float Value, float Min, float Max)
     }
     return Result;
 }
+void ADC_Select_CH(uint8_t ChanelNum)
+{
+	ADC_ChannelConfTypeDef sConfig = {0};
 
+	switch(ChanelNum)
+	{
+	case 0:
+		sConfig.Channel = ADC_CHANNEL_2;
+		break;
+	case 1:
+		sConfig.Channel = ADC_CHANNEL_3;
+		break;
+	case 2:
+		sConfig.Channel = ADC_CHANNEL_4;
+		break;
+	case 3:
+		sConfig.Channel = ADC_CHANNEL_5;
+		break;
+	case 4:
+		sConfig.Channel = ADC_CHANNEL_6;
+		break;
+	case 5:
+		sConfig.Channel = ADC_CHANNEL_8;
+		break;
+	case 6:
+		sConfig.Channel = ADC_CHANNEL_9;
+		break;
+	case 7:
+		sConfig.Channel = ADC_CHANNEL_10;
+		break;
+	case 8:
+		sConfig.Channel = ADC_CHANNEL_12;
+		break;
+	case 9:
+		sConfig.Channel = ADC_CHANNEL_13;
+		break;
+	}
+
+	sConfig.Rank = 1;
+	sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+}
+void ADC_Update()
+{
+	for (int i = 0; i < ADC_CH_COUNT; i++)
+	{
+		ADC_Select_CH(i);
+		HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 1000);
+		ADC_VAL[i] = HAL_ADC_GetValue(&hadc1);
+		HAL_ADC_Stop(&hadc1);
+	}
+}
+void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
+{
+	for(int i = 0; i <= steps; i++)
+	{
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, dir);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 1);
+		HAL_Delay(1);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 0);
+		HAL_Delay(period);
+	}
+}
+uint8_t Fl_Update = 0;
+//------MODE ANIMATIO
+uint8_t Mode = 1;
+//------POSITION LED
+int8_t Pos = 0;
+//------FLAG UP/DOWN FOR ANIMATION1
+uint8_t Fl_Top = 0;
+//-----Animation2
+uint8_t BRIGHTNESS=0;
+uint8_t FL_BRIGHTNESS=0;
+// color for brightness
+uint8_t ColorRed=0;
+uint8_t ColorGreen=0;
+uint8_t ColorBlue=0;
+
+//-----Animation3
+uint8_t Pos1=0;
+uint8_t Pos2=LED_COUNT-1;
+uint8_t Fl_Top1 = 0;
+uint8_t Fl_Top2 = 1;
+void WS2812_PIXEL_RGB_TO_BUF_DMA(uint8_t Rpixel , uint8_t Gpixel, uint8_t Bpixel, uint16_t posX){
+  for(uint8_t i=0;i<8;i++){
+    if (BitIsSet(Rpixel,(7-i)) == 1){
+      BUF_DMA[DELAY_LEN+posX*24+i+8] = HIGH;
+    }else{
+      BUF_DMA[DELAY_LEN+posX*24+i+8] = LOW;
+    }
+    if (BitIsSet(Gpixel,(7-i)) == 1){
+      BUF_DMA[DELAY_LEN+posX*24+i+0] = HIGH;
+    }else{
+      BUF_DMA[DELAY_LEN+posX*24+i+0] = LOW;
+    }
+    if (BitIsSet(Bpixel,(7-i)) == 1){
+      BUF_DMA[DELAY_LEN+posX*24+i+16] = HIGH;
+    }else{
+      BUF_DMA[DELAY_LEN+posX*24+i+16] = LOW;
+    }
+  }
+}
+void WS2812_LIGHT(void){
+	HAL_TIM_PWM_Start_DMA(&htim2, TIM_CHANNEL_1, (uint32_t*)&BUF_DMA, ARRAY_LEN);
+}
+void WS2812_CLEAR(void){
+	for (uint8_t i = 0; i < LED_COUNT; ++i){WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, 0, i);}
+}
+void WS2812_Init(void){
+	for (uint16_t i = DELAY_LEN; i < ARRAY_LEN; i++)BUF_DMA[i] = LOW;
+	//WS2812_CLEAR();
+	WS2812_LIGHT();
+	HAL_Delay(1);
+}
+void WS2812_ANIMATION_1(void){
+	//WS2812_CLEAR();
+	WS2812_PIXEL_RGB_TO_BUF_DMA(128, 0, 0, Pos);
+    if(Pos<(LED_COUNT-1)){WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, 128, Pos+1);}
+    if(Pos<(LED_COUNT-2)){WS2812_PIXEL_RGB_TO_BUF_DMA(0, 128, 0, Pos+2);}
+	WS2812_LIGHT();
+	if(Fl_Top==0){
+		Pos++;
+		if(Pos==LED_COUNT-2){Fl_Top=1;Pos=LED_COUNT-4;}
+	}else if (Fl_Top==1) {
+		Pos--;
+		if(Pos==0){Fl_Top=0;Pos=0;}
+	}
+}
+void WS2812_ANIMATION_2(void) {
+	for (uint8_t i = 0; i < LED_COUNT; i++) {
+		WS2812_PIXEL_RGB_TO_BUF_DMA(ColorRed * BRIGHTNESS / 100,	ColorGreen * BRIGHTNESS / 100, ColorBlue * BRIGHTNESS / 100, i);
+	}
+	WS2812_LIGHT();
+	if (FL_BRIGHTNESS == 0) {
+		BRIGHTNESS++;
+	if(BRIGHTNESS == MAX_BRIGHTNESS) {
+		FL_BRIGHTNESS=1;
+		BRIGHTNESS=MAX_BRIGHTNESS;
+	}
+} else if (FL_BRIGHTNESS == 1) {
+	BRIGHTNESS--;
+	if (BRIGHTNESS == 0) {
+		FL_BRIGHTNESS = 0;
+		BRIGHTNESS = 0;
+		ColorRed = rand()%255;
+		ColorGreen = rand()%255;
+		ColorBlue = rand()%255;
+	}
+}
+}
+void WS2812_ANIMATION_3(void){
+	//WS2812_CLEAR();
+	WS2812_PIXEL_RGB_TO_BUF_DMA(128, 0, 0, Pos1);
+	WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, 128, Pos2);
+	WS2812_LIGHT();
+	//--LED1
+	if (Fl_Top1 == 0) {
+		Pos1++;
+		if (Pos1 == LED_COUNT) {Fl_Top1 = 1;Pos1 = LED_COUNT - 2;}
+	} else if (Fl_Top1 == 1) {
+		Pos1--;
+		if (Pos1 == 0) {Fl_Top1 = 0;Pos1 = 0;
+		}
+	}
+	//--LED2
+	if (Fl_Top2 == 0) {
+		Pos2++;
+		if (Pos2 == LED_COUNT) {Fl_Top2 = 1;Pos2 = LED_COUNT - 2;
+		}
+	} else if (Fl_Top2 == 1) {Pos2--;
+	if (Pos2 == 0) {Fl_Top2 = 0;Pos2 = 0;
+		}
+	}
+}
+void WS2812_UPDATE(void){
+	if (debug_led_en==0) {
+		Mode = 0;
+		//if(Mode>2)Mode=0;
+		Pos = 0;
+		Fl_Top = 0;
+		BRIGHTNESS=0;
+		FL_BRIGHTNESS=0;
+		ColorRed=128;
+		ColorGreen=70;
+		ColorBlue=30;
+		Pos1=0;
+		Pos2=LED_COUNT-1;
+		Fl_Top1 = 0;
+		Fl_Top2 = 1;
+	}
+	switch (Mode) {
+	case 0:
+		WS2812_ANIMATION_1();
+		break;
+	case 1:
+		WS2812_ANIMATION_2();
+		break;
+	case 2:
+		WS2812_ANIMATION_3();
+	}
+	Fl_Update = 0;
+}
 /* USER CODE END 0 */
 
 /**
@@ -703,16 +933,23 @@ int main(void)
   icm20948_init();
   ak09916_init();
   IMU_INIT();
+  WS2812_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (HAL_GetTick() - LastUpdateIMU > 100)
+	  if (HAL_GetTick() - LastUpdateIMU > 1)
 	  {
 		  IMU_UPDATE();
 		  LastUpdateIMU = HAL_GetTick();
+	  }
+
+	  if (HAL_GetTick() - LastUpdateADC > 10)
+	  {
+		  ADC_Update();
+		  LastUpdateADC = HAL_GetTick();
 	  }
 
 	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100) // UART2 RECEIVE FEEDBACK
@@ -727,6 +964,13 @@ int main(void)
 	  {
 		  USART2ReceiveState = 0;
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
+
+		  if(InititionHall == 0)
+		  {
+			  HallLeftStepPast = SerialControlWheelsResponce.WheelLeftSteps;
+			  HallRightStepPast = SerialControlWheelsResponce.WheelRightSteps;
+			  InititionHall = 1;
+		  }
 
 		  if (HallActualize(SerialControlWheelsResponce.WheelLeftSteps, HallLeftStepPast, MOTHERBOARD_DIFF))
 		  {
@@ -801,12 +1045,28 @@ int main(void)
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
 	  }*/
 
-	  BALANCE_Prepare();
-	  BALANCE_Calculate_Speeds();
-	  BALANCE_Speed_LinearControl();
-	  BALANCE_Position_Angular_Control();
-	  BALANCE_LOOP();
-	  BALANCE_Result_Loop();
+	  if (HAL_GetTick() - LastUpdateLogic > 10)
+
+	  {
+		  BALANCE_Prepare();
+		  BALANCE_Calculate_Speeds();
+		  BALANCE_Position_Linear_Control();
+		  BALANCE_Speed_LinearControl();
+		  BALANCE_Position_Angular_Control();
+		  BALANCE_LOOP();
+		  BALANCE_Result_Loop();
+		  LastUpdateLogic = HAL_GetTick();
+	  }
+
+	  if (debug_led_en == 1)
+	  {
+		  WS2812_UPDATE();
+	  }
+
+	  if (debug_driver_en == 1)
+	  {
+		  StepControl(debug_direction, debug_period, debug_steps);
+	  }
 
 	  SERIAL_CONTROL_LOOP();
 
