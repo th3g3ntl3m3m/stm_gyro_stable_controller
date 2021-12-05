@@ -116,6 +116,7 @@ union {
 #define DUTY_MAX_LINEAR 0.15
 
 #define ADC_CH_COUNT 10
+#define STEPPER_DRIVE_MAX 3200
 
 #define DELAY_LEN 48 //48
 #define LED_COUNT 32
@@ -206,6 +207,8 @@ float linearDeltaTimePrev = 0;
 float minLinearValue = 0.05;
 int linearIntegralerrorCoun = 0;
 
+uint32_t CurrentStepPark = 0;
+
 uint8_t PositionLinearControlSwitch;
 uint8_t BalanceActive;
 int16_t ParkingPersentage;
@@ -222,6 +225,7 @@ uint32_t PackageLastTimeReset_OnBoardPC;
 uint32_t LastUpdateIMU;
 uint32_t LastUpdateLogic;
 uint32_t LastUpdateADC;
+uint32_t LastUpdateServo;
 
 int ControlCommandTimeoutMS = 2000;
 
@@ -263,13 +267,26 @@ FusionEulerAngles eulerAngles;
 
 uint16_t ADC_VAL[ADC_CH_COUNT] = {0,};
 
+uint16_t dADC0;
+uint16_t dADC1;
+uint16_t dADC2;
+uint16_t dADC3;
+uint16_t dADC4;
+uint16_t dADC5;
+uint16_t dADC6;
+uint16_t dADC7;
+uint16_t dADC8;
+uint16_t dADC9;
+
 uint8_t debug_driver_en = 0;
 uint8_t debug_direction = 0;
-uint32_t debug_steps = 200;
+uint32_t debug_steps = 10;
 uint32_t debug_period = 1600;
 
 uint8_t debug_led_en = 0;
 uint8_t debug_led_mode = 0;
+
+
 
 /* USER CODE END PV */
 
@@ -278,7 +295,9 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void ADC_Select_CH(uint8_t ChanelNum);
 void ADC_Update();
-void StepControl(uint8_t dir, uint32_t period, uint32_t steps);
+void DrivePrepare();
+void DriveToStep(uint8_t dir, uint32_t period, uint32_t steps);
+void DriveStop();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -419,9 +438,9 @@ void IMU_UPDATE()
 	uncalibratedAccelerometer.axis.y = my_accel.y;
 	uncalibratedAccelerometer.axis.z = my_accel.z;
 
-	//uncalibratedMagnetometer.axis.x = my_mag.x;
-	//uncalibratedMagnetometer.axis.y = my_mag.y;
-	//uncalibratedMagnetometer.axis.z = my_mag.z;
+	uncalibratedMagnetometer.axis.x = my_mag.x;
+	uncalibratedMagnetometer.axis.y = my_mag.y;
+	uncalibratedMagnetometer.axis.z = my_mag.z;
 
 	FusionVector3 calibratedGyroscope = FusionCalibrationInertial(uncalibratedGyroscope, FUSION_ROTATION_MATRIX_IDENTITY, gyroscopeSensitivity, FUSION_VECTOR3_ZERO);
 	FusionVector3 calibratedAccelerometer = FusionCalibrationInertial(uncalibratedAccelerometer, FUSION_ROTATION_MATRIX_IDENTITY, accelerometerSensitivity, FUSION_VECTOR3_ZERO);
@@ -436,7 +455,7 @@ void SERIAL_CONTROL_LOOP()
 {
 	SerialControlWheelsRequest.ControlMode = 0;
 	SerialControlWheelsRequest.ParameterNumber = 0;
-	SerialControlWheelsRequest.WheelLeft = BTFront;
+	//SerialControlWheelsRequest.WheelLeft = BTFront;
 	SerialControlWheelsRequest.WheelRight = BTTurn;
 	SerialControlWheelsRequest.CR=13;
 	SerialControlWheelsRequest.LF=10;
@@ -447,13 +466,13 @@ void BALANCE_Prepare()
 	Front = BTFront;
 	Turn = BTTurn;
 
-	/*if (Battery < 4)
+	if (Battery < 4)
 	{
 		Front = 0;
 		Turn = 0;
-	}*/
+	}
 
-	/*if ((fabsf(Front) < 0.001) && (fabsf(Turn) < 0.001) && (fabsf(SpeedLinear) < 0.02) && (fabsf(LeftSpeed - RightSpeed) < 0.02))
+	if ((fabsf(Front) < 0.001) && (fabsf(Turn) < 0.001) && (fabsf(SpeedLinear) < 0.02) && (fabsf(LeftSpeed - RightSpeed) < 0.02))
 	{
 		if ((Battery < 4) && (BalanceActiveDemand))
 		{
@@ -467,7 +486,7 @@ void BALANCE_Prepare()
 		{
 			BalanceActiveDemand = false;
 		}
-	}*/
+	}
 
 	Turn = (Turn > 90) ? 90 : Turn;
 	Turn = (Turn < -90) ? -90 : Turn;
@@ -478,9 +497,18 @@ void BALANCE_Prepare()
 
 	// Point to add ParkingMode
 
-	BalanceActiveDemand = BTBalanceActive;
-	BalanceActive = BTBalanceActive;
-	PositionLinearDemand = PositionLinear;
+	if (BalanceActiveDemand)
+	{
+
+	}
+	else
+	{
+
+	}
+
+	//BalanceActiveDemand = BTBalanceActive;
+	//BalanceActive = BTBalanceActive;
+	//PositionLinearDemand = PositionLinear;
 }
 void BALANCE_Calculate_Speeds()
 {
@@ -632,7 +660,7 @@ void BALANCE_Position_Angular_Control()
 }
 void BALANCE_LOOP()
 {
-	GyroY = (eulerAngles.angle.pitch * -1) + PlatformYDemand + AngleCorrection - ParkingAngle;
+	GyroY = (eulerAngles.angle.pitch * 1) + PlatformYDemand + AngleCorrection - ParkingAngle;
 
 	GyroYSpeed = GyroY - GyroYPrevious;
 	GyroYPrevious = GyroY;
@@ -739,17 +767,37 @@ void ADC_Update()
 		ADC_VAL[i] = HAL_ADC_GetValue(&hadc1);
 		HAL_ADC_Stop(&hadc1);
 	}
+
+	dADC0 = ADC_VAL[0];
+	dADC1 = ADC_VAL[1];
+	dADC2 = ADC_VAL[2];
+	dADC3 = ADC_VAL[3];
+	dADC4 = ADC_VAL[4];
+	dADC5 = ADC_VAL[5];
+	dADC6 = ADC_VAL[6];
+	dADC7 = ADC_VAL[7];
+	dADC8 = ADC_VAL[8];
+	dADC9 = ADC_VAL[9];
+
 }
 void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
 {
 	for(int i = 0; i <= steps; i++)
 	{
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, dir);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 1);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, i);
 		HAL_Delay(1);
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 0);
 		HAL_Delay(period);
 	}
+}
+void MotopStop()
+{
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 0);
+}
+void DrivePrepare()
+{
+	StepControl(0,1,STEPPER_DRIVE_MAX);
 }
 uint8_t Fl_Update = 0;
 //------MODE ANIMATIO
@@ -934,6 +982,7 @@ int main(void)
   ak09916_init();
   IMU_INIT();
   WS2812_Init();
+  //DrivePrepare();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -946,11 +995,11 @@ int main(void)
 		  LastUpdateIMU = HAL_GetTick();
 	  }
 
-	  if (HAL_GetTick() - LastUpdateADC > 10)
+	  /*if (HAL_GetTick() - LastUpdateADC > 10)
 	  {
 		  ADC_Update();
 		  LastUpdateADC = HAL_GetTick();
-	  }
+	  }*/
 
 	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100) // UART2 RECEIVE FEEDBACK
 	  {
@@ -1056,16 +1105,6 @@ int main(void)
 		  BALANCE_LOOP();
 		  BALANCE_Result_Loop();
 		  LastUpdateLogic = HAL_GetTick();
-	  }
-
-	  if (debug_led_en == 1)
-	  {
-		  WS2812_UPDATE();
-	  }
-
-	  if (debug_driver_en == 1)
-	  {
-		  StepControl(debug_direction, debug_period, debug_steps);
 	  }
 
 	  SERIAL_CONTROL_LOOP();
