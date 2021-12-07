@@ -104,7 +104,6 @@ union {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 #define SYSTEM_HARDWARE_UART0 (&huart2)
 #define SYSTEM_HARDWARE_UART1 (&huart3)
 #define SYSTEM_HARDWARE_ADC (&hadc1)
