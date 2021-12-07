@@ -6,13 +6,12 @@
   ******************************************************************************
   * @attention
   *
-  * <h2><center>&copy; Copyright (c) 2021 STMicroelectronics.
-  * All rights reserved.</center></h2>
+  * 					<h2><center>RTK-WOLVES</center></h2>
   *
-  * This software component is licensed by ST under BSD 3-Clause license,
-  * the "License"; You may not use this file except in compliance with the
-  * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
+  *
+  * 								Created by
+  * 						@Lord_tachanka @th3d0l0rh3z3
+  *                        			  AT 2021
   *
   ******************************************************************************
   */
@@ -28,8 +27,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "icm20948.h"
-#include "Fusion.h"
+#include "icm20948.h"	// Драйвер для гироскопа (самопис.)
+#include "Fusion.h"		// Библиотека преобразований данных гироскопа (самопис.)
 #include "stdlib.h"
 /* USER CODE END Includes */
 
@@ -40,56 +39,65 @@
 union {
     struct
     {
-        uint8_t ControlMode;
-        uint8_t ParameterNumber;
-        float ParameterValue;
-        float WheelLeft;
-        float WheelRight;
-        uint8_t CR;
-        uint8_t LF;
+        uint8_t ControlMode;				// 1 - Режим управления(не используется)
+        uint8_t ParameterNumber;			// 1 - Номер параметра(не используется)
+        float ParameterValue;				// 4 - Значение параметра(не используется)
+        float WheelLeft;					// 4 - ШИМ левое колесо, от -1 до 1
+        float WheelRight;					// 4 - ШИМ правое колесо, от -1 до 1
+        uint8_t CR;							// 1 - Байт синхронизации
+        uint8_t LF;							// 1 - Байт синхронизации
     };
-    uint8_t Buffer[WHEELS_REQUEST_SIZE];
-} SerialControlWheelsRequest;
+    uint8_t Buffer[WHEELS_REQUEST_SIZE];	// Буффер байт
+} SerialControlWheelsRequest;				// Пакет для отправки на плату гироскутера
 
-#define WHEELS_RESPONCE_SIZE 16
+#define WHEELS_RESPONCE_SIZE 16				// Размер пакета
 union {
     struct
     {
-        uint8_t State;
-        uint8_t ParameterNumber;
-        float ParameterValue;
-        int32_t WheelLeftSteps;
-        int32_t WheelRightSteps;
-        uint8_t CR;
-        uint8_t LF;
+        uint8_t State;						// 1 - Код статуса
+        uint8_t ParameterNumber;			// 1 - Номер параметра
+        float ParameterValue;				// 4 - Значение параметра
+        int32_t WheelLeftSteps;				// 4 - Положение по датчикам холла, левое колесо
+        int32_t WheelRightSteps;			// 4 - Положение по датчикам холла, правое колесо
+        uint8_t CR;							// 1 - Байт синхронизации
+        uint8_t LF;							// 1 - Байт синхронизации
     };
-    uint8_t Buffer[WHEELS_RESPONCE_SIZE];
-} SerialControlWheelsResponce;
+    uint8_t Buffer[WHEELS_RESPONCE_SIZE];	// Буффер байт
+} SerialControlWheelsResponce;				// Пакет приема ответного сообщения с платы гироскутера
 
-#define ON_BOARD_CONTROL_REQUEST_SIZE 10
+#define HIGH_LEVEL_REQUEST_SIZE 14				// Размер пакета
 union {
 	struct
 	{
-		float Linear;
-		int16_t Angular;
-		int8_t ParkingMode;
-		uint8_t LedMode;
-		uint8_t CR;
-		uint8_t LF;
+		float Linear;			 				// 4 - Линейная скорость
+		float Angular;							// 4 - Угловая скорость
+		int8_t DriveMode;						// 1 - Режим движения
+		uint8_t ParameterNumber;				// 1 - Индекс параметров
+		float ParametrValue;					// 4 - Значние параметра
+		uint8_t CR;								// 1 - Байт синхронизации
+		uint8_t LF;								// 1 - Байт синхронизации
 	};
-	uint8_t Buffer[ON_BOARD_CONTROL_REQUEST_SIZE];
-} SerialOnBoardRequest;
+	uint8_t Buffer[HIGH_LEVEL_REQUEST_SIZE];	// Буффер байт
+} SerialHighLevelRequest;						// Принимаемый пакет от вычислителя вехнего уровня
 
-#define ON_BOARD_CONTROL_RESPONCE_SIZE 10
+#define HIGH_LEVEL_RESPONCE_SIZE 10				// Размер пакета
 union {
 	struct
 	{
-		int32_t WheelLeftSteps;
-		int32_t WheelRightSteps;
-		uint8_t CR;
-		uint8_t LF;
+		int8_t ControllerState;					// 1 Статусное состояние контроллера
+		int32_t WheelLeftSteps;					// 4 Показания датчика холла, левый
+		int32_t WheelRightSteps;				// 4 Показания датчика холла, правый
+		uint8_t BatteryPersentage;				// 1 Процент заряда батареи
+		int16_t Roll;							// 2 Крен (Ahrs)
+		int16_t Pitch;							// 2 Тангаж ()
+		int16_t Yaw;							// 2
+		uint16_t CenterIkSensor;				// 2
+		uint8_t ParameterNumber;				// 1
+		float ParametrValue;					// 4
+		uint8_t CR;								// 1 Байт синхронизации
+		uint8_t LF;								// 1 Байт синхронизации
 	};
-	uint8_t Buffer[ON_BOARD_CONTROL_RESPONCE_SIZE];
+	uint8_t Buffer[HIGH_LEVEL_RESPONCE_SIZE];	// Буфер байт
 }SerialOnBoardResponce;
 #pragma pack(pop)
 /* USER CODE END PTD */

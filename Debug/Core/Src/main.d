@@ -33,13 +33,13 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
  ../Core/Inc/adc.h ../Core/Inc/main.h ../Core/Inc/dma.h ../Core/Inc/spi.h \
  ../Core/Inc/tim.h ../Core/Inc/usart.h ../Core/Inc/gpio.h \
- C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/ICM20948/icm20948.h \
- C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/Fusion.h \
- C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionAhrs.h \
- C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionTypes.h \
- C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionBias.h \
- C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionCalibration.h \
- C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionCompass.h
+ C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/ICM20948/icm20948.h \
+ C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/Fusion.h \
+ C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionAhrs.h \
+ C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionTypes.h \
+ C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionBias.h \
+ C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionCalibration.h \
+ C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionCompass.h
 
 ../Core/Inc/main.h:
 
@@ -121,16 +121,16 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 
 ../Core/Inc/gpio.h:
 
-C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/ICM20948/icm20948.h:
+C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/ICM20948/icm20948.h:
 
-C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/Fusion.h:
+C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/Fusion.h:
 
-C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionAhrs.h:
+C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionAhrs.h:
 
-C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionTypes.h:
+C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionTypes.h:
 
-C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionBias.h:
+C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionBias.h:
 
-C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionCalibration.h:
+C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionCalibration.h:
 
-C:/Users/Lord\ Tachanka/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionCompass.h:
+C:/Users/ka25s/STM32CubeIDE/workspace_1.7.0/stm_gyro_stable_controller/Core/FusionIMU/FusionCompass.h:
