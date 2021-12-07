@@ -52,7 +52,7 @@ void icm20948_init()
 	//icm20948_accel_calibration();
 
 	icm20948_gyro_full_scale_select(_2000dps);
-	icm20948_accel_full_scale_select(_16g);
+	icm20948_accel_full_scale_select(_2g);
 }
 
 void ak09916_init()

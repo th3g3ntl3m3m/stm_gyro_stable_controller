@@ -115,18 +115,19 @@ union {
 #define DUTY_MAX_ANGULAR 0.1
 #define DUTY_MAX_LINEAR 0.15
 
-#define ADC_CH_COUNT 10
+#define ADC_CH_COUNT 8
 #define STEPPER_DRIVE_MAX 3200
 
-#define DELAY_LEN 48 //48
-#define LED_COUNT 32
-#define HIGH 68  //65
-#define LOW 24	//26
+#define DELAY_LEN 48
+#define LED_COUNT 16
+#define HIGH 65
+#define LOW 26
 #define ARRAY_LEN DELAY_LEN+LED_COUNT*24
 #define BitIsSet(reg, bit) ((reg & (1<<bit))!=0)
 #define MAX_BRIGHTNESS 50
 uint32_t BUF_DMA[ARRAY_LEN]={0};
 
+uint16_t MAX_LIGHT = 128;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -215,8 +216,6 @@ int16_t ParkingPersentage;
 uint8_t FootAngleDemand;
 uint8_t FootDrive;
 uint8_t FootParking;
-uint8_t FootAngle;
-uint8_t FootActive;
 
 uint8_t* LostByte;
 
@@ -226,6 +225,7 @@ uint32_t LastUpdateIMU;
 uint32_t LastUpdateLogic;
 uint32_t LastUpdateADC;
 uint32_t LastUpdateServo;
+uint32_t LastUpdateLed;
 
 int ControlCommandTimeoutMS = 2000;
 
@@ -267,6 +267,9 @@ FusionEulerAngles eulerAngles;
 
 uint16_t ADC_VAL[ADC_CH_COUNT] = {0,};
 
+uint8_t BTN_PARK_UP;
+uint8_t BTN_PARK_DOWN;
+
 uint16_t dADC0;
 uint16_t dADC1;
 uint16_t dADC2;
@@ -286,7 +289,14 @@ uint32_t debug_period = 1600;
 uint8_t debug_led_en = 0;
 uint8_t debug_led_mode = 0;
 
-
+uint8_t debug_ADC_0 = 0;
+uint8_t debug_ADC_1 = 0;
+uint8_t debug_ADC_2 = 0;
+uint8_t debug_ADC_3 = 0;
+uint8_t debug_ADC_4 = 0;
+uint8_t debug_ADC_5 = 0;
+uint8_t debug_ADC_6 = 0;
+uint8_t debug_ADC_7 = 0;
 
 /* USER CODE END PV */
 
@@ -306,15 +316,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
 	HAL_StatusTypeDef Res;
 
-	if (UartHandle->Instance == UART4){ // Jetson commutation
+	/*if (UartHandle->Instance == USART6){ // Jetson commutation
 		if (USART1ReceiveState == 0){
 			if ((SerialOnBoardRequest.CR != 13) || (SerialOnBoardRequest.LF != 10)){
-				Res = HAL_UART_Receive_DMA(&huart4, LostByte, 1);
+				Res = HAL_UART_Receive_DMA(&huart6, LostByte, 1);
 				USART1ReceiveState = 1;
 			}
 			else{
  				USART1ReceiveState = 10;
-				Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+				Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 			}
 		}
 		else{
@@ -322,28 +332,28 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 				if (LostByte[0] == 13){
 					USART1ReceiveState = 2;
 				}
-				Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)LostByte, 1);
+				Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)LostByte, 1);
 			}
 			else{
 				if (USART1ReceiveState == 2){
 					if (LostByte[0] == 10){
 						USART1ReceiveState = 0;
-						Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+						Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 					}
 					else{
 						USART1ReceiveState = 1;
-						Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)LostByte, 1);
+						Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)LostByte, 1);
 					}
 				}
 			}
 		}
 		if (Res != HAL_OK)
 		{
-			MX_UART4_Init();
+			MX_USART6_UART_Init();
 			USART1ReceiveState = 0;
-			Res = HAL_UART_Receive_DMA(&huart4, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+			Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 		}
-	}
+	}*/
 
 	if (UartHandle->Instance == USART2)
 	{
@@ -430,6 +440,9 @@ void IMU_UPDATE()
 	icm20948_accel_read_g(&my_accel);
 	//ak09916_mag_read_uT(&my_mag);
 
+	icm20948_accel_read(&my_accel);
+	icm20948_gyro_read(&my_gyro);
+
 	uncalibratedGyroscope.axis.x = my_gyro.x;
 	uncalibratedGyroscope.axis.y = my_gyro.y;
 	uncalibratedGyroscope.axis.z = my_gyro.z;
@@ -455,11 +468,20 @@ void SERIAL_CONTROL_LOOP()
 {
 	SerialControlWheelsRequest.ControlMode = 0;
 	SerialControlWheelsRequest.ParameterNumber = 0;
-	//SerialControlWheelsRequest.WheelLeft = BTFront;
+	SerialControlWheelsRequest.WheelLeft = BTFront;
 	SerialControlWheelsRequest.WheelRight = BTTurn;
 	SerialControlWheelsRequest.CR=13;
 	SerialControlWheelsRequest.LF=10;
 	HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
+}
+
+void SERIAL_ONBOARD_LOOP()
+{
+	SerialOnBoardRequest.Linear = 0;
+	SerialOnBoardRequest.Angular = 0;
+	SerialOnBoardRequest.CR = 13;
+	SerialOnBoardRequest.LF = 10;
+	//HAL_UART_Transmit_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
 }
 void BALANCE_Prepare()
 {
@@ -503,7 +525,7 @@ void BALANCE_Prepare()
 	}
 	else
 	{
-
+		FootAngleDemand = STEPPER_DRIVE_MAX;
 	}
 
 	//BalanceActiveDemand = BTBalanceActive;
@@ -719,34 +741,28 @@ void ADC_Select_CH(uint8_t ChanelNum)
 	switch(ChanelNum)
 	{
 	case 0:
-		sConfig.Channel = ADC_CHANNEL_2;
+		sConfig.Channel = ADC_CHANNEL_0;
 		break;
 	case 1:
-		sConfig.Channel = ADC_CHANNEL_3;
+		sConfig.Channel = ADC_CHANNEL_1;
 		break;
 	case 2:
-		sConfig.Channel = ADC_CHANNEL_4;
+		sConfig.Channel = ADC_CHANNEL_2;
 		break;
 	case 3:
-		sConfig.Channel = ADC_CHANNEL_5;
-		break;
-	case 4:
-		sConfig.Channel = ADC_CHANNEL_6;
-		break;
-	case 5:
 		sConfig.Channel = ADC_CHANNEL_8;
 		break;
-	case 6:
+	case 4:
 		sConfig.Channel = ADC_CHANNEL_9;
 		break;
-	case 7:
+	case 5:
 		sConfig.Channel = ADC_CHANNEL_10;
 		break;
-	case 8:
-		sConfig.Channel = ADC_CHANNEL_12;
+	case 6:
+		sConfig.Channel = ADC_CHANNEL_11;
 		break;
-	case 9:
-		sConfig.Channel = ADC_CHANNEL_13;
+	case 7:
+		sConfig.Channel = ADC_CHANNEL_12;
 		break;
 	}
 
@@ -756,16 +772,18 @@ void ADC_Select_CH(uint8_t ChanelNum)
 	{
 		Error_Handler();
 	}
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 1000);
+	ADC_VAL[ChanelNum] = HAL_ADC_GetValue(&hadc1);
+	HAL_ADC_Stop(&hadc1);
+
 }
+
 void ADC_Update()
 {
 	for (int i = 0; i < ADC_CH_COUNT; i++)
 	{
 		ADC_Select_CH(i);
-		HAL_ADC_Start(&hadc1);
-		HAL_ADC_PollForConversion(&hadc1, 1000);
-		ADC_VAL[i] = HAL_ADC_GetValue(&hadc1);
-		HAL_ADC_Stop(&hadc1);
 	}
 
 	dADC0 = ADC_VAL[0];
@@ -776,8 +794,6 @@ void ADC_Update()
 	dADC5 = ADC_VAL[5];
 	dADC6 = ADC_VAL[6];
 	dADC7 = ADC_VAL[7];
-	dADC8 = ADC_VAL[8];
-	dADC9 = ADC_VAL[9];
 
 }
 void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
@@ -791,6 +807,7 @@ void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
 		HAL_Delay(period);
 	}
 }
+
 void MotopStop()
 {
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 0);
@@ -799,13 +816,18 @@ void DrivePrepare()
 {
 	StepControl(0,1,STEPPER_DRIVE_MAX);
 }
+
+//------FLUPDATE
 uint8_t Fl_Update = 0;
 //------MODE ANIMATIO
-uint8_t Mode = 1;
+uint8_t Mode = 0;
 //------POSITION LED
 int8_t Pos = 0;
 //------FLAG UP/DOWN FOR ANIMATION1
 uint8_t Fl_Top = 0;
+//-------FL USER BTN;
+uint8_t FL_BTN = 0;
+uint8_t Count_BTN=0;
 //-----Animation2
 uint8_t BRIGHTNESS=0;
 uint8_t FL_BRIGHTNESS=0;
@@ -839,22 +861,26 @@ void WS2812_PIXEL_RGB_TO_BUF_DMA(uint8_t Rpixel , uint8_t Gpixel, uint8_t Bpixel
   }
 }
 void WS2812_LIGHT(void){
-	HAL_TIM_PWM_Start_DMA(&htim2, TIM_CHANNEL_1, (uint32_t*)&BUF_DMA, ARRAY_LEN);
+	HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t*)&BUF_DMA, ARRAY_LEN);
+	HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_2, (uint32_t*)&BUF_DMA, ARRAY_LEN);
+	HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_3, (uint32_t*)&BUF_DMA, ARRAY_LEN);
+	HAL_TIM_PWM_Start_DMA(&htim4, TIM_CHANNEL_2, (uint32_t*)&BUF_DMA, ARRAY_LEN);
 }
 void WS2812_CLEAR(void){
 	for (uint8_t i = 0; i < LED_COUNT; ++i){WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, 0, i);}
 }
 void WS2812_Init(void){
 	for (uint16_t i = DELAY_LEN; i < ARRAY_LEN; i++)BUF_DMA[i] = LOW;
-	//WS2812_CLEAR();
+	WS2812_CLEAR();
 	WS2812_LIGHT();
 	HAL_Delay(1);
 }
+//-------------Three LED up and down
 void WS2812_ANIMATION_1(void){
-	//WS2812_CLEAR();
-	WS2812_PIXEL_RGB_TO_BUF_DMA(128, 0, 0, Pos);
-    if(Pos<(LED_COUNT-1)){WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, 128, Pos+1);}
-    if(Pos<(LED_COUNT-2)){WS2812_PIXEL_RGB_TO_BUF_DMA(0, 128, 0, Pos+2);}
+	WS2812_CLEAR();
+	WS2812_PIXEL_RGB_TO_BUF_DMA(MAX_LIGHT, 0, 0, Pos);
+    if(Pos<(LED_COUNT-1)){WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, MAX_LIGHT, Pos+1);}
+    if(Pos<(LED_COUNT-2)){WS2812_PIXEL_RGB_TO_BUF_DMA(0, MAX_LIGHT, 0, Pos+2);}
 	WS2812_LIGHT();
 	if(Fl_Top==0){
 		Pos++;
@@ -887,7 +913,7 @@ void WS2812_ANIMATION_2(void) {
 }
 }
 void WS2812_ANIMATION_3(void){
-	//WS2812_CLEAR();
+	WS2812_CLEAR();
 	WS2812_PIXEL_RGB_TO_BUF_DMA(128, 0, 0, Pos1);
 	WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, 128, Pos2);
 	WS2812_LIGHT();
@@ -911,9 +937,10 @@ void WS2812_ANIMATION_3(void){
 	}
 }
 void WS2812_UPDATE(void){
-	if (debug_led_en==0) {
-		Mode = 0;
-		//if(Mode>2)Mode=0;
+	if (FL_BTN==1) {
+		FL_BTN=0;
+		Mode++;
+		if(Mode>2)Mode=0;
 		Pos = 0;
 		Fl_Top = 0;
 		BRIGHTNESS=0;
@@ -938,6 +965,7 @@ void WS2812_UPDATE(void){
 	}
 	Fl_Update = 0;
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -970,36 +998,51 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART2_UART_Init();
-  MX_ADC1_Init();
-  MX_TIM2_Init();
-  MX_TIM6_Init();
-  MX_TIM7_Init();
-  MX_TIM14_Init();
-  MX_UART4_Init();
   MX_SPI2_Init();
+  MX_USART3_UART_Init();
+  MX_TIM1_Init();
+  MX_TIM4_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  icm20948_init();
-  ak09916_init();
-  IMU_INIT();
-  WS2812_Init();
+  //icm20948_init();
+  //ak09916_init();
+  //IMU_INIT();
+  //WS2812_Init();
   //DrivePrepare();
+
+  WS2812_Init();
+  	//HAL_TIM_Base_Start_IT(&htim6);
+  	//HAL_TIM_Base_Start_IT(&htim7);
+  	ColorRed = rand() % 255;
+  	ColorGreen = rand() % 255;
+  	ColorBlue = rand() % 255;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  BTN_PARK_UP = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4);
+	  BTN_PARK_DOWN = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_5);
+
+	  if (HAL_GetTick() - LastUpdateLed > 100)
+	  {
+		  WS2812_UPDATE();
+		  LastUpdateLed = HAL_GetTick();
+	  }
+
 	  if (HAL_GetTick() - LastUpdateIMU > 1)
 	  {
 		  IMU_UPDATE();
 		  LastUpdateIMU = HAL_GetTick();
 	  }
 
-	  /*if (HAL_GetTick() - LastUpdateADC > 10)
+	  if (HAL_GetTick() - LastUpdateADC > 10)
 	  {
 		  ADC_Update();
 		  LastUpdateADC = HAL_GetTick();
-	  }*/
+	  }
 
 	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100) // UART2 RECEIVE FEEDBACK
 	  {
@@ -1008,6 +1051,14 @@ int main(void)
 		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 		  PackageLastTimeReset_Motherboard = HAL_GetTick();
 	  }
+
+	  /*if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 100)
+	  {
+		  MX_USART6_UART_Init();
+		  USART1ReceiveState = 0;
+		  HAL_UART_Receive_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
+	  }*/
 
 	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
@@ -1107,7 +1158,18 @@ int main(void)
 		  LastUpdateLogic = HAL_GetTick();
 	  }
 
+	  /*if(debug_driver_en)
+	  {
+		  StepControl(debug_direction, debug_period, debug_steps);
+		  debug_driver_en = 0;
+	  }
+	  else
+	  {
+		  MotopStop();
+	  }*/
+
 	  SERIAL_CONTROL_LOOP();
+	  //SERIAL_ONBOARD_LOOP();
 
     /* USER CODE END WHILE */
 
