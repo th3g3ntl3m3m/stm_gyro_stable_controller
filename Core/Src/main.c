@@ -35,7 +35,7 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 #pragma pack(push, 1)
-#define WHEELS_REQUEST_SIZE 16 // Пакет для взаимодействия с STMF103 на плате гироскутера
+#define WHEELS_REQUEST_SIZE 16 				// Размер пакета
 union {
     struct
     {
@@ -80,25 +80,25 @@ union {
 	uint8_t Buffer[HIGH_LEVEL_REQUEST_SIZE];	// Буффер байт
 } SerialHighLevelRequest;						// Принимаемый пакет от вычислителя вехнего уровня
 
-#define HIGH_LEVEL_RESPONCE_SIZE 10				// Размер пакета
+#define HIGH_LEVEL_RESPONCE_SIZE 25				// Размер пакета
 union {
 	struct
 	{
-		int8_t ControllerState;					// 1 Статусное состояние контроллера
-		int32_t WheelLeftSteps;					// 4 Показания датчика холла, левый
-		int32_t WheelRightSteps;				// 4 Показания датчика холла, правый
-		uint8_t BatteryPersentage;				// 1 Процент заряда батареи
-		int16_t Roll;							// 2 Крен (Ahrs)
-		int16_t Pitch;							// 2 Тангаж ()
-		int16_t Yaw;							// 2
-		uint16_t CenterIkSensor;				// 2
-		uint8_t ParameterNumber;				// 1
-		float ParametrValue;					// 4
-		uint8_t CR;								// 1 Байт синхронизации
-		uint8_t LF;								// 1 Байт синхронизации
+		int8_t ControllerState;					// 1 - Статусное состояние контроллера
+		int32_t WheelLeftSteps;					// 4 - Показания датчика холла, левый
+		int32_t WheelRightSteps;				// 4 - Показания датчика холла, правый
+		uint8_t BatteryPersentage;				// 1 - Процент заряда батареи
+		int16_t Roll;							// 2 - Крен (AHRS)
+		int16_t Pitch;							// 2 - Тангаж (AHRS)
+		int16_t Yaw;							// 2 - Рысканье (AHRS)
+		uint16_t CenterIkSensor;				// 2 - Показания ИК-дальномера
+		uint8_t ParameterNumber;				// 1 - Индекс параметров
+		float ParametrValue;					// 4 - Номер параметра
+		uint8_t CR;								// 1 - Байт синхронизации
+		uint8_t LF;								// 1 - Байт синхронизации
 	};
 	uint8_t Buffer[HIGH_LEVEL_RESPONCE_SIZE];	// Буфер байт
-}SerialOnBoardResponce;
+}SerialHighLevelResponce;						// Отправляемый в ответ пакет
 #pragma pack(pop)
 /* USER CODE END PTD */
 
