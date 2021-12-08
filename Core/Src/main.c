@@ -42,8 +42,8 @@ union {
         uint8_t ControlMode;				// 1 - Режим управления(не используется)
         uint8_t ParameterNumber;			// 1 - Номер параметра(не используется)
         float ParameterValue;				// 4 - Значение параметра(не используется)
-        float WheelLeft;					// 4 - Ш�?М левое колесо, от -1 до 1
-        float WheelRight;					// 4 - Ш�?М правое колесо, от -1 до 1
+        float WheelLeft;					// 4 - Ш�?М левое колесо, от -1 до 1
+        float WheelRight;					// 4 - Ш�?М правое колесо, от -1 до 1
         uint8_t CR;							// 1 - Байт синхронизации
         uint8_t LF;							// 1 - Байт синхронизации
     };
@@ -72,7 +72,7 @@ union {
 		float Linear;			 				// 4 - Линейная скорость
 		float Angular;							// 4 - Угловая скорость
 		int8_t DriveMode;						// 1 - Режим движения
-		uint8_t ParameterNumber;				// 1 - �?ндекс параметров
+		uint8_t ParameterNumber;				// 1 - �?ндекс параметров
 		float ParametrValue;					// 4 - Значние параметра
 		uint8_t CR;								// 1 - Байт синхронизации
 		uint8_t LF;								// 1 - Байт синхронизации
@@ -91,8 +91,8 @@ union {
 		int16_t Roll;							// 2 - Крен (AHRS)
 		int16_t Pitch;							// 2 - Тангаж (AHRS)
 		int16_t Yaw;							// 2 - Рысканье (AHRS)
-		uint16_t CenterIkSensor;				// 2 - Показания �?К-дальномера
-		uint8_t ParameterNumber;				// 1 - �?ндекс параметров
+		uint16_t CenterIkSensor;				// 2 - Показания �?К-дальномера
+		uint8_t ParameterNumber;				// 1 - �?ндекс параметров
 		float ParametrValue;					// 4 - Номер параметра
 		uint8_t CR;								// 1 - Байт синхронизации
 		uint8_t LF;								// 1 - Байт синхронизации
@@ -100,10 +100,16 @@ union {
 	uint8_t Buffer[HIGH_LEVEL_RESPONCE_SIZE];	// Буфер байт
 }SerialHighLevelResponce;						// Отправляемый в ответ пакет
 #pragma pack(pop)
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define SYSTEM_NO_GYRO_INIT
+#define SYSTEM_NO_IMU_INIT
+#define SYSTEM_NO_PARK_INIT
+#define SYSTEM_NO_LED_INIT
+
 #define SYSTEM_HARDWARE_UART0 (&huart2)
 #define SYSTEM_HARDWARE_UART1 (&huart3)
 #define SYSTEM_HARDWARE_ADC (&hadc1)
@@ -140,10 +146,10 @@ union {
 #define SYSTEM_HARDWARE_LED4_PORT GPIOD
 #define SYSTEM_HARDWARE_LED4_PIN GPIO_PIN_15
 
-#define STATE_INIT 0
+#define SYSTEM_STATE_INIT 0
 
-#define ON_BOARD_PC_DELAY_MS 100
-#define MOTHERBOARD_DELAY_MS 100
+#define SYSTEM_DELAY_MS_HIGH_UART 100
+#define SYSTEM_DELAY_MS_LOW_UART 100
 
 #define MOTHERBOARD_DIFF 100
 
@@ -182,8 +188,8 @@ uint16_t MAX_LIGHT = 128;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-volatile uint8_t USART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
-volatile uint8_t USART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
+volatile uint8_t UART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
+volatile uint8_t UART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
 
 //global for debug
 float TimeS;
@@ -482,7 +488,6 @@ void IMU_UPDATE()
 {
 	icm20948_gyro_read_dps(&my_gyro);
 	icm20948_accel_read_g(&my_accel);
-	//ak09916_mag_read_uT(&my_mag);
 
 	icm20948_accel_read(&my_accel);
 	icm20948_gyro_read(&my_gyro);
@@ -495,17 +500,11 @@ void IMU_UPDATE()
 	uncalibratedAccelerometer.axis.y = my_accel.y;
 	uncalibratedAccelerometer.axis.z = my_accel.z;
 
-	uncalibratedMagnetometer.axis.x = my_mag.x;
-	uncalibratedMagnetometer.axis.y = my_mag.y;
-	uncalibratedMagnetometer.axis.z = my_mag.z;
-
 	FusionVector3 calibratedGyroscope = FusionCalibrationInertial(uncalibratedGyroscope, FUSION_ROTATION_MATRIX_IDENTITY, gyroscopeSensitivity, FUSION_VECTOR3_ZERO);
 	FusionVector3 calibratedAccelerometer = FusionCalibrationInertial(uncalibratedAccelerometer, FUSION_ROTATION_MATRIX_IDENTITY, accelerometerSensitivity, FUSION_VECTOR3_ZERO);
-	//FusionVector3 calibratedMagnetometer = FusionCalibrationMagnetic(uncalibratedMagnetometer, FUSION_ROTATION_MATRIX_IDENTITY, hardIronBias);
 
 	calibratedGyroscope = FusionBiasUpdate(&fusionBias, calibratedGyroscope);
 	FusionAhrsUpdateWithoutMagnetometer(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, samplePeriod);
-	//FusionAhrsUpdate(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, calibratedMagnetometer, samplePeriod);
 	eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
 }
 void SERIAL_CONTROL_LOOP()
@@ -1048,19 +1047,21 @@ int main(void)
   MX_TIM4_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  //icm20948_init();
-  //ak09916_init();
-  //IMU_INIT();
-  //WS2812_Init();
-  //DrivePrepare();
-
+#ifndef SYSTEM_NO_GYRO
+  icm20948_init();
+#endif
+#ifndef SYSTEM_NO_IMU
+  IMU_INIT();
+#endif
+#ifndef SYSTEM_NO_PARK
+  DrivePrepare();
+#endif
+#ifndef SYSTEM_NO_LED
   WS2812_Init();
-  	//HAL_TIM_Base_Start_IT(&htim6);
-  	//HAL_TIM_Base_Start_IT(&htim7);
-  	ColorRed = rand() % 255;
-  	ColorGreen = rand() % 255;
-  	ColorBlue = rand() % 255;
-
+  ColorRed = rand() % 255;
+  ColorGreen = rand() % 255;
+  ColorBlue = rand() % 255;
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
