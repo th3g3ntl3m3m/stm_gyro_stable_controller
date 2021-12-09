@@ -107,7 +107,6 @@ typedef struct
 	int32_t OutputHall;
 } HallFilter;
 
-/*
 typedef struct
 {
 	float Voltage;
@@ -120,7 +119,7 @@ typedef struct
 	float ConnErrCount;
 	float CommTime;
 } LowUartData;
-*/
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -231,6 +230,7 @@ volatile uint8_t UartHighReceiveState = 0; // 0 - by default; 1 - trouble by CR/
 uint8_t* LostByte;
 HallFilter WheelsHall[2];
 uint8_t InitionHall = 0;
+LowUartData LowDiagnostic;
 
 //global for debug
 //float TimeS;
@@ -524,35 +524,34 @@ void UartLowPrepareRaw(uint16_t Difference, int32_t* InputHall, uint8_t Count)
 		}
 	}
 
-	/*
 	switch (SerialControlWheelsResponce.ParameterNumber)
 	{
 		case 0:
-			Voltage = SerialControlWheelsResponce.ParameterValue;
-		  	Battery += ((Interpolation(Voltage, 28, 41) * 100.0) - Battery) * 0.01;
+			LowDiagnostic.Voltage = SerialControlWheelsResponce.ParameterValue;
+			LowDiagnostic.Battery += ((Interpolation(Voltage, 28, 41) * 100.0) - Battery) * 0.01;
 		  	break;
 		case 1:
-			CurrentLeft = SerialControlWheelsResponce.ParameterValue;
+			LowDiagnostic.CurrentLeft = SerialControlWheelsResponce.ParameterValue;
 			break;
 		case 2:
-			CurrentRight = SerialControlWheelsResponce.ParameterValue;
+			LowDiagnostic.CurrentRight = SerialControlWheelsResponce.ParameterValue;
 			break;
 		case 3:
-			RPSLeft = SerialControlWheelsResponce.ParameterValue;
+			LowDiagnostic.RPSLeft = SerialControlWheelsResponce.ParameterValue;
 			break;
 		case 4:
-			RPSRight = SerialControlWheelsResponce.ParameterValue;
+			LowDiagnostic.RPSRight = SerialControlWheelsResponce.ParameterValue;
 			break;
 		case 5:
-			OverCurrCount = SerialControlWheelsResponce.ParameterValue;
+			LowDiagnostic.OverCurrCount = SerialControlWheelsResponce.ParameterValue;
 			break;
 		case 6:
-			ConnErrCount = SerialControlWheelsResponce.ParameterValue;
+			LowDiagnostic.ConnErrCount = SerialControlWheelsResponce.ParameterValue;
 			break;
 		case 7:
-		  	CommTime = SerialControlWheelsResponce.ParameterValue;
+			LowDiagnostic.CommTime = SerialControlWheelsResponce.ParameterValue;
 		  	break;
-	}*/
+	}
 }
 int HallActualize(int32_t NewStep, int32_t LastStep, int32_t Difference)
 {
