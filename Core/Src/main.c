@@ -124,9 +124,9 @@ typedef struct
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/*#define SYSTEM_NO_GYRO_INIT
+#define SYSTEM_NO_GYRO_INIT
 #define SYSTEM_NO_IMU_INIT
-#define SYSTEM_NO_PARK_INIT
+/*#define SYSTEM_NO_PARK_INIT
 #define SYSTEM_NO_LED_INIT
 */
 #define SYSTEM_HARDWARE_UART_LOW (&huart2)
@@ -393,6 +393,7 @@ void SystemClock_Config(void);
 void UartLowPrepareRaw(uint16_t Difference, int32_t* InputHall, uint8_t Count);
 int HallActualize(int32_t NewStep, int32_t LastStep, int32_t Difference);
 void GPIOUpdate();
+float Interpolation(float Value, float Min, float Max);
 //void ADC_Select_CH(uint8_t ChanelNum);
 //void ADC_Update();
 //void DrivePrepare();
@@ -516,7 +517,7 @@ void UartLowPrepareRaw(uint16_t Difference, int32_t* InputHall, uint8_t Count)
 		{
 			WheelsHall[i].LastHall = InputHall[i];
 		}
-		InititionHall = 1;
+		InitionHall = 1;
 	}
 	for (int i = 0; i < Count; i++)
 	{
@@ -535,7 +536,7 @@ void UartLowPrepareRaw(uint16_t Difference, int32_t* InputHall, uint8_t Count)
 	{
 		case 0:
 			LowDiagnostic.Voltage = SerialControlWheelsResponce.ParameterValue;
-			LowDiagnostic.Battery += ((Interpolation(Voltage, 28, 41) * 100.0) - Battery) * 0.01;
+			LowDiagnostic.Battery += ((Interpolation(LowDiagnostic.Voltage, 28, 41) * 100.0) - LowDiagnostic.Battery) * 0.01;
 		  	break;
 		case 1:
 			LowDiagnostic.CurrentLeft = SerialControlWheelsResponce.ParameterValue;
@@ -573,6 +574,19 @@ void GPIOUpdate()
 {
 	FootButtonUp = HAL_GPIO_ReadPin(SYSTEM_HARDWARE_PARKING_LEG_UP_PORT, SYSTEM_HARDWARE_PARKING_LEG_UP_PIN);
 	FootButtonUp = HAL_GPIO_ReadPin(SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT, SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN);
+}
+float Interpolation(float Value, float Min, float Max)
+{
+    float Result = (Value - Min) / (Max - Min);
+    if (Result > 1)
+    {
+        return 1;
+    }
+    if (Result < 0)
+    {
+        return 0;
+    }
+    return Result;
 }
 /*
 void IMU_INIT()
@@ -1130,12 +1144,13 @@ int main(void)
   MX_TIM4_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-/*#ifndef SYSTEM_NO_GYRO_INIT
+#ifndef SYSTEM_NO_GYRO_INIT
   icm20948_init();
 #endif
 #ifndef SYSTEM_NO_IMU_INIT
   IMU_INIT();
 #endif
+/*
 #ifndef SYSTEM_NO_PARK_INIT
   DrivePrepare();
 #endif
@@ -1181,9 +1196,7 @@ int main(void)
 		  LastUpdateGPIO = HAL_GetTick();
 	  }
 
-	  /*BTN_PARK_UP = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4);
-	  BTN_PARK_DOWN = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_5);
-
+	  /*
 	  if (HAL_GetTick() - LastUpdateLed > 100)
 	  {
 		  WS2812_UPDATE();
