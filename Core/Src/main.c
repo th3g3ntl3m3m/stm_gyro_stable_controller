@@ -100,6 +100,13 @@ union {
 	uint8_t Buffer[HIGH_LEVEL_RESPONCE_SIZE];	// Буфер байт
 }SerialHighLevelResponce;						// Отправляемый в ответ пакет
 #pragma pack(pop)
+
+typedef struct
+{
+	int32_t LastHall;
+	int32_t OutputHall;
+} HallFilter;
+
 /*
 typedef struct
 {
@@ -130,6 +137,9 @@ typedef struct
 
 #define SYSTEM_TIMING_MS_UART_LOW 100
 #define SYSTEM_TIMING_MS_UART_HIGH 100
+
+#define SYSTEM_HALL_FILTER_MAX 1000
+
 /*
 #define SYSTEM_HARDWARE_ADC (&hadc1)
 #define SYSTEM_HARDWARE_ADC_IK_FL ADC_CHANNEL_0
@@ -219,6 +229,8 @@ uint32_t LastPkgTimeUartHigh = 0;
 volatile uint8_t UartLowReceiveState = 0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
 volatile uint8_t UartHighReceiveState = 0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
 uint8_t* LostByte;
+HallFilter WheelsHall[2];
+uint8_t InitionHall = 0;
 
 //global for debug
 //float TimeS;
@@ -372,6 +384,8 @@ uint8_t debug_ADC_7 = 0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+void UartLowPrepareRaw(uint16_t Difference, int32_t* InputHall, uint8_t Count);
+int HallActualize(int32_t NewStep, int32_t LastStep, int32_t Difference);
 //void ADC_Select_CH(uint8_t ChanelNum);
 //void ADC_Update();
 //void DrivePrepare();
@@ -487,18 +501,69 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 		}
 	}
 }
-/*
-int HallActualize(float NewStep, float LastStep, float difference)
+void UartLowPrepareRaw(uint16_t Difference, int32_t* InputHall, uint8_t Count)
 {
-	float MIN_VAL = LastStep - difference;
-	float MAX_VAL = LastStep + difference;
+	if(InitionHall == 0)
+	{
+		for(int i = 0; i < Count; i++)
+		{
+			WheelsHall[i].LastHall = InputHall[i];
+		}
+		InititionHall = 1;
+	}
+	for (int i = 0; i < Count; i++)
+	{
+		if (HallActualize(InputHall[i], WheelsHall[i].LastHall, Difference))
+		{
+			WheelsHall[i].OutputHall = InputHall[i];
+			WheelsHall[i].LastHall = InputHall[i];
+		}
+		if (!HallActualize(InputHall[i], WheelsHall[i].LastHall, Difference))
+		{
+			WheelsHall[i].LastHall = InputHall[i];
+		}
+	}
 
-	if ((NewStep < MAX_VAL) && (NewStep > MIN_VAL))
+	/*
+	switch (SerialControlWheelsResponce.ParameterNumber)
+	{
+		case 0:
+			Voltage = SerialControlWheelsResponce.ParameterValue;
+		  	Battery += ((Interpolation(Voltage, 28, 41) * 100.0) - Battery) * 0.01;
+		  	break;
+		case 1:
+			CurrentLeft = SerialControlWheelsResponce.ParameterValue;
+			break;
+		case 2:
+			CurrentRight = SerialControlWheelsResponce.ParameterValue;
+			break;
+		case 3:
+			RPSLeft = SerialControlWheelsResponce.ParameterValue;
+			break;
+		case 4:
+			RPSRight = SerialControlWheelsResponce.ParameterValue;
+			break;
+		case 5:
+			OverCurrCount = SerialControlWheelsResponce.ParameterValue;
+			break;
+		case 6:
+			ConnErrCount = SerialControlWheelsResponce.ParameterValue;
+			break;
+		case 7:
+		  	CommTime = SerialControlWheelsResponce.ParameterValue;
+		  	break;
+	}*/
+}
+int HallActualize(int32_t NewStep, int32_t LastStep, int32_t Difference)
+{
+	int32_t CalcDiff = abs(LastStep - NewStep);
+	if (CalcDiff <= Difference)
 	{
 		return 1;
 	}
 	return 0;
 }
+/*
 void IMU_INIT()
 {
 	gyroscopeSensitivity.axis.x = 1.0f;
@@ -1079,7 +1144,7 @@ int main(void)
 	  {
 		  MX_USART2_UART_Init();
 		  UartLowReceiveState = 0;
-		  HAL_UART_Receive_DMA(SYSTEM_TIMING_MS_UART_LOW, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+		  HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 		  LastPkgTimeUartLow = HAL_GetTick();
 	  }
 
@@ -1089,6 +1154,14 @@ int main(void)
 		  UartHighReceiveState = 0;
 		  HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 		  LastPkgTimeUartHigh = HAL_GetTick();
+	  }
+
+	  if ((UartLowReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
+	  {
+		  UartLowReceiveState = 0;
+		  int32_t TemplateWheels[2] = { SerialControlWheelsResponce.WheelLeftSteps, SerialControlWheelsResponce.WheelRightSteps };
+		  UartLowPrepareRaw(SYSTEM_HALL_FILTER_MAX, TemplateWheels, 2);
+		  LastPkgTimeUartLow = HAL_GetTick();
 	  }
 
 	  /*BTN_PARK_UP = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4);
@@ -1110,86 +1183,6 @@ int main(void)
 	  {
 		  ADC_Update();
 		  LastUpdateADC = HAL_GetTick();
-	  }
-
-	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100)
-	  {
-		  MX_USART2_UART_Init();
-		  USART2ReceiveState = 0;
-		  HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
-		  PackageLastTimeReset_Motherboard = HAL_GetTick();
-	  }
-
-	  if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 100)
-	  {
-		  MX_USART3_UART_Init();
-		  USART1ReceiveState = 0;
-		  HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
-		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
-	  }
-
-	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
-	  {
-		  USART2ReceiveState = 0;
-		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
-
-		  if(InititionHall == 0)
-		  {
-			  HallLeftStepPast = SerialControlWheelsResponce.WheelLeftSteps;
-			  HallRightStepPast = SerialControlWheelsResponce.WheelRightSteps;
-			  InititionHall = 1;
-		  }
-
-		  if (HallActualize(SerialControlWheelsResponce.WheelLeftSteps, HallLeftStepPast, MOTHERBOARD_DIFF))
-		  {
-			  HallLeftStep = SerialControlWheelsResponce.WheelLeftSteps;
-			  HallLeftStepPast = HallLeftStep;
-		  }
-		  else
-		  {
-			  HallLeftStep = HallLeftStepPast;
-		  }
-
-		  if (HallActualize(SerialControlWheelsResponce.WheelRightSteps, HallRightStepPast, MOTHERBOARD_DIFF))
-		  {
-			  HallRightStep = SerialControlWheelsResponce.WheelRightSteps;
-			  HallRightStepPast = HallRightStep;
-		  }
-		  else
-		  {
-			  HallRightStep = HallRightStepPast;
-		  }
-
-		  PackageLastTimeReset_Motherboard = HAL_GetTick();
-
-		  switch (SerialControlWheelsResponce.ParameterNumber)
-		  {
-		  case 0:
-			  Voltage = SerialControlWheelsResponce.ParameterValue;
-			  Battery += ((Interpolation(Voltage, 28, 41) * 100.0) - Battery) * 0.01;
-			  break;
-		  case 1:
-			  CurrentLeft = SerialControlWheelsResponce.ParameterValue;
-		      break;
-		  case 2:
-		      CurrentRight = SerialControlWheelsResponce.ParameterValue;
-		      break;
-		  case 3:
-		      RPSLeft = SerialControlWheelsResponce.ParameterValue;
-		      break;
-		  case 4:
-		      RPSRight = SerialControlWheelsResponce.ParameterValue;
-		      break;
-		  case 5:
-		      OverCurrCount = SerialControlWheelsResponce.ParameterValue;
-		      break;
-		  case 6:
-		      ConnErrCount = SerialControlWheelsResponce.ParameterValue;
-		      break;
-		  case 7:
-		      CommTime = SerialControlWheelsResponce.ParameterValue;
-		      break;
-		  }
 	  }
 
 	  if ((USART1ReceiveState == 10) && (SerialHighLevelRequest.CR == 13) && (SerialHighLevelRequest.LF == 10))
