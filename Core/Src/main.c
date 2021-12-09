@@ -34,7 +34,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#pragma pack(push, 1)
+/*#pragma pack(push, 1)
 #define WHEELS_REQUEST_SIZE 16 				// Размер пакета
 union {
     struct
@@ -113,12 +113,12 @@ typedef struct
 	float ConnErrCount;
 	float CommTime;
 } LowUartData;
-
+*/
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SYSTEM_NO_GYRO_INIT
+/*#define SYSTEM_NO_GYRO_INIT
 #define SYSTEM_NO_IMU_INIT
 #define SYSTEM_NO_PARK_INIT
 #define SYSTEM_NO_LED_INIT
@@ -196,7 +196,7 @@ uint16_t MAX_LIGHT = 128;
 
 #define ADC_CH_COUNT 8
 #define STEPPER_DRIVE_MAX 3200
-
+*/
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -207,16 +207,16 @@ uint16_t MAX_LIGHT = 128;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-volatile uint8_t UART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
-volatile uint8_t UART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
+//volatile uint8_t UART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
+//volatile uint8_t UART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
 
 //global for debug
-float TimeS;
+//float TimeS;
 //----------------
 
-LowUartData STM32Gyroscooter;
+//LowUartData STM32Gyroscooter;
 
-float PositionIValue;
+/*float PositionIValue;
 float SpeedLinearDemand;
 float PositionPID;
 float RotationPID;
@@ -358,26 +358,27 @@ uint8_t debug_ADC_4 = 0;
 uint8_t debug_ADC_5 = 0;
 uint8_t debug_ADC_6 = 0;
 uint8_t debug_ADC_7 = 0;
-
+*/
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-void ADC_Select_CH(uint8_t ChanelNum);
-void ADC_Update();
-void DrivePrepare();
-void DriveToStep(uint8_t dir, uint32_t period, uint32_t steps);
-void DriveStop();
+//void ADC_Select_CH(uint8_t ChanelNum);
+//void ADC_Update();
+//void DrivePrepare();
+//void DriveToStep(uint8_t dir, uint32_t period, uint32_t steps);
+//void DriveStop();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/*
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
 	HAL_StatusTypeDef Res;
 
-	if (UartHandle->Instance == USART3){ // Jetson commutation
+	if (UartHandle->Instance == USART3){
 		if (USART1ReceiveState == 0){
 			if ((SerialHighLevelRequest.CR != 13) || (SerialHighLevelRequest.LF != 10)){
 				Res = HAL_UART_Receive_DMA(&huart3, LostByte, 1);
@@ -467,6 +468,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 		}
 	}
 }
+
 int HallActualize(float NewStep, float LastStep, float difference)
 {
 	float MIN_VAL = LastStep - difference;
@@ -994,7 +996,7 @@ void WS2812_UPDATE(void){
 	}
 	Fl_Update = 0;
 }
-
+*/
 /* USER CODE END 0 */
 
 /**
@@ -1033,7 +1035,7 @@ int main(void)
   MX_TIM4_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-#ifndef SYSTEM_NO_GYRO_INIT
+/*#ifndef SYSTEM_NO_GYRO_INIT
   icm20948_init();
 #endif
 #ifndef SYSTEM_NO_IMU_INIT
@@ -1047,14 +1049,14 @@ int main(void)
   ColorRed = rand() % 255;
   ColorGreen = rand() % 255;
   ColorBlue = rand() % 255;
-#endif
+#endif*/
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  BTN_PARK_UP = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4);
+	  /*BTN_PARK_UP = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4);
 	  BTN_PARK_DOWN = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_5);
 
 	  if (HAL_GetTick() - LastUpdateLed > 100)
@@ -1187,7 +1189,7 @@ int main(void)
 		  LastUpdateLogic = HAL_GetTick();
 	  }
 
-	  /*if(debug_driver_en)
+	  if(debug_driver_en)
 	  {
 		  StepControl(debug_direction, debug_period, debug_steps);
 		  debug_driver_en = 0;
@@ -1197,7 +1199,7 @@ int main(void)
 		  MotopStop();
 	  }*/
 
-	  SERIAL_CONTROL_LOOP();
+	  //SERIAL_CONTROL_LOOP();
 	  //SERIAL_ONBOARD_LOOP();
 
     /* USER CODE END WHILE */
