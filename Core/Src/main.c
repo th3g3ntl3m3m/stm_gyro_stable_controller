@@ -236,6 +236,8 @@ LowUartData LowDiagnostic;
 uint8_t FootButtonUp = 0;
 uint8_t FootButtonDown = 0;
 
+uint32_t LastUpdateGPIO = 0;
+
 //global for debug
 //float TimeS;
 //----------------
@@ -1171,6 +1173,12 @@ int main(void)
 		  int32_t TemplateWheels[2] = { SerialControlWheelsResponce.WheelLeftSteps, SerialControlWheelsResponce.WheelRightSteps };
 		  UartLowPrepareRaw(SYSTEM_HALL_FILTER_MAX, TemplateWheels, 2);
 		  LastPkgTimeUartLow = HAL_GetTick();
+	  }
+
+	  if (HAL_GetTick() - LastUpdateGPIO > SYSTEM_TIMING_MS_GPIO)
+	  {
+		  GPIOUpdate();
+		  LastUpdateGPIO = HAL_GetTick();
 	  }
 
 	  /*BTN_PARK_UP = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4);
