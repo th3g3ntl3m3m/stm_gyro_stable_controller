@@ -133,9 +133,14 @@ typedef struct
 #define SYSTEM_HARDWARE_UART_LOW_INSTANSE USART2
 #define SYSTEM_HARDWARE_UART_HIGH (&huart3)
 #define SYSTEM_HARDWARE_UART_HIGH_INSTANSE USART3
+#define SYSTEM_HARDWARE_PARKING_LEG_UP_PORT GPIOE
+#define SYSTEM_HARDWARE_PARKING_LEG_UP_PIN GPIO_PIN_4
+#define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT GPIOE
+#define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN GPIO_PIN_5
 
 #define SYSTEM_TIMING_MS_UART_LOW 100
 #define SYSTEM_TIMING_MS_UART_HIGH 100
+#define SYSTEM_TIMING_MS_GPIO 100
 
 #define SYSTEM_HALL_FILTER_MAX 1000
 
@@ -155,10 +160,6 @@ typedef struct
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PIN GPIO_PIN_5
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PORT GPIOE
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PIN GPIO_PIN_8
-#define SYSTEM_HARDWARE_PARKING_LEG_UP_PORT GPIOE
-#define SYSTEM_HARDWARE_PARKING_LEG_UP_PIN GPIO_PIN_4
-#define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT GPIOE
-#define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN GPIO_PIN_5
 #define SYSTEM_HARDWARE_PWM_CH1_PORT (&htim1)
 #define SYSTEM_HARDWARE_PWM_CH1_CH TIM_CHANNEL_1
 #define SYSTEM_HARDWARE_PWM_CH2_PORT (&htim1)
@@ -231,6 +232,9 @@ uint8_t* LostByte;
 HallFilter WheelsHall[2];
 uint8_t InitionHall = 0;
 LowUartData LowDiagnostic;
+
+uint8_t FootButtonUp = 0;
+uint8_t FootButtonDown = 0;
 
 //global for debug
 //float TimeS;
@@ -386,6 +390,7 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void UartLowPrepareRaw(uint16_t Difference, int32_t* InputHall, uint8_t Count);
 int HallActualize(int32_t NewStep, int32_t LastStep, int32_t Difference);
+void GPIOUpdate();
 //void ADC_Select_CH(uint8_t ChanelNum);
 //void ADC_Update();
 //void DrivePrepare();
@@ -561,6 +566,11 @@ int HallActualize(int32_t NewStep, int32_t LastStep, int32_t Difference)
 		return 1;
 	}
 	return 0;
+}
+void GPIOUpdate()
+{
+	FootButtonUp = HAL_GPIO_ReadPin(SYSTEM_HARDWARE_PARKING_LEG_UP_PORT, SYSTEM_HARDWARE_PARKING_LEG_UP_PIN);
+	FootButtonUp = HAL_GPIO_ReadPin(SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT, SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN);
 }
 /*
 void IMU_INIT()
