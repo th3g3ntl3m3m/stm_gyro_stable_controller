@@ -120,6 +120,13 @@ typedef struct
 	float CommTime;
 } LowUartData;
 
+typedef struct
+{
+	uint16_t* Raw;
+	uint16_t* Sensors;
+	uint16_t* Amperage;
+} ADCData;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -137,14 +144,6 @@ typedef struct
 #define SYSTEM_HARDWARE_PARKING_LEG_UP_PIN GPIO_PIN_4
 #define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT GPIOE
 #define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN GPIO_PIN_5
-
-#define SYSTEM_TIMING_MS_UART_LOW 100
-#define SYSTEM_TIMING_MS_UART_HIGH 100
-#define SYSTEM_TIMING_MS_GPIO 100
-
-#define SYSTEM_HALL_FILTER_MAX 1000
-
-/*
 #define SYSTEM_HARDWARE_ADC (&hadc1)
 #define SYSTEM_HARDWARE_ADC_IK_FL ADC_CHANNEL_0
 #define SYSTEM_HARDWARE_ADC_IK_FR ADC_CHANNEL_0
@@ -154,6 +153,16 @@ typedef struct
 #define SYSTEM_HARDWARE_ADC_AMP_36 ADC_CHANNEL_0
 #define SYSTEM_HARDWARE_ADC_AMP_12 ADC_CHANNEL_0
 #define SYSTEM_HARDWARE_ADC_AMP_5 ADC_CHANNEL_0
+#define SYSTEM_HARDWARE_ADC_Channel_Count 8
+
+#define SYSTEM_TIMING_MS_UART_LOW 100
+#define SYSTEM_TIMING_MS_UART_HIGH 100
+#define SYSTEM_TIMING_MS_GPIO 100
+#define SYSTEM_TIMING_MS_ADC 10
+
+#define SYSTEM_HALL_FILTER_MAX 1000
+
+/*
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT GPIOC
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN GPIO_PIN_4
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PORT GPIOC
@@ -237,6 +246,9 @@ uint8_t FootButtonUp = 0;
 uint8_t FootButtonDown = 0;
 
 uint32_t LastUpdateGPIO = 0;
+uint32_t LastUpdateADC = 0;
+
+ADCData AdcModule;
 
 //global for debug
 //float TimeS;
@@ -394,6 +406,10 @@ void UartLowPrepareRaw(uint16_t Difference, int32_t* InputHall, uint8_t Count);
 int HallActualize(int32_t NewStep, int32_t LastStep, int32_t Difference);
 void GPIOUpdate();
 float Interpolation(float Value, float Min, float Max);
+void ADCInit();
+void ADCUpdate();
+void ADCPrepare();
+uint16_t ReadAdcChanel(uint8_t Channel);
 //void ADC_Select_CH(uint8_t ChanelNum);
 //void ADC_Update();
 //void DrivePrepare();
@@ -587,6 +603,75 @@ float Interpolation(float Value, float Min, float Max)
         return 0;
     }
     return Result;
+}
+void ADCInit()
+{
+	uint16_t Raw[SYSTEM_HARDWARE_ADC_Channel_Count];
+	uint16_t Sensors[SYSTEM_HARDWARE_ADC_Channel_Count - 3];
+	uint16_t Amperage[SYSTEM_HARDWARE_ADC_Channel_Count - 5];
+	AdcModule.Raw = Raw;
+	AdcModule.Sensors = Sensors;
+	AdcModule.Amperage = Amperage;
+}
+void ADCUpdate()
+{
+	for (int i = 0; i < SYSTEM_HARDWARE_ADC_Channel_Count; i++)
+	{
+		AdcModule.ADCRaw[i] = ReadAdcChanel(i);
+	}
+}
+void ADCPrepare()
+{
+	for (int i = 0; i < SYSTEM_HARDWARE_ADC_Channel_Count - 3; i++)
+	{
+
+	}
+}
+uint16_t ReadAdcChanel(uint8_t Channel)
+{
+	ADC_ChannelConfTypeDef sConfig = {0};
+
+	uint16_t RetVal;
+
+	switch(Channel)
+	{
+	case 0:
+		sConfig.Channel = SYSTEM_HARDWARE_ADC_IK_FL;
+		break;
+	case 1:
+		sConfig.Channel = SYSTEM_HARDWARE_ADC_IK_FR;
+		break;
+	case 2:
+		sConfig.Channel = SYSTEM_HARDWARE_ADC_IK_BL;
+		break;
+	case 3:
+		sConfig.Channel = SYSTEM_HARDWARE_ADC_IK_BR;
+		break;
+	case 4:
+		sConfig.Channel = SYSTEM_HARDWARE_ADC_IK_CN;
+		break;
+	case 5:
+		sConfig.Channel = SYSTEM_HARDWARE_ADC_AMP_36;
+		break;
+	case 6:
+		sConfig.Channel = SYSTEM_HARDWARE_ADC_AMP_12;
+		break;
+	case 7:
+		sConfig.Channel = SYSTEM_HARDWARE_ADC_AMP_5;
+		break;
+	}
+
+	sConfig.Rank = 1;
+	sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+	if (HAL_ADC_ConfigChannel(SYSTEM_HARDWARE_ADC, &sConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	HAL_ADC_Start(SYSTEM_HARDWARE_ADC);
+	HAL_ADC_PollForConversion(SYSTEM_HARDWARE_ADC, 1000);
+	RetVal = HAL_ADC_GetValue(SYSTEM_HARDWARE_ADC);
+	HAL_ADC_Stop(SYSTEM_HARDWARE_ADC);
+	return RetVal;
 }
 /*
 void IMU_INIT()
@@ -899,50 +984,6 @@ float Interpolation(float Value, float Min, float Max)
     }
     return Result;
 }
-void ADC_Select_CH(uint8_t ChanelNum)
-{
-	ADC_ChannelConfTypeDef sConfig = {0};
-
-	switch(ChanelNum)
-	{
-	case 0:
-		sConfig.Channel = ADC_CHANNEL_0;
-		break;
-	case 1:
-		sConfig.Channel = ADC_CHANNEL_1;
-		break;
-	case 2:
-		sConfig.Channel = ADC_CHANNEL_2;
-		break;
-	case 3:
-		sConfig.Channel = ADC_CHANNEL_8;
-		break;
-	case 4:
-		sConfig.Channel = ADC_CHANNEL_9;
-		break;
-	case 5:
-		sConfig.Channel = ADC_CHANNEL_10;
-		break;
-	case 6:
-		sConfig.Channel = ADC_CHANNEL_11;
-		break;
-	case 7:
-		sConfig.Channel = ADC_CHANNEL_12;
-		break;
-	}
-
-	sConfig.Rank = 1;
-	sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
-	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-	{
-		Error_Handler();
-	}
-	HAL_ADC_Start(&hadc1);
-	HAL_ADC_PollForConversion(&hadc1, 1000);
-	ADC_VAL[ChanelNum] = HAL_ADC_GetValue(&hadc1);
-	HAL_ADC_Stop(&hadc1);
-
-}
 
 void ADC_Update()
 {
@@ -1144,12 +1185,15 @@ int main(void)
   MX_TIM4_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-#ifndef SYSTEM_NO_GYRO_INIT
+#ifndef SYSTEM_NO_ADC_INIT
+  ADCInit();
+#endif
+/*#ifndef SYSTEM_NO_GYRO_INIT
   icm20948_init();
 #endif
 #ifndef SYSTEM_NO_IMU_INIT
   IMU_INIT();
-#endif
+#endif*/
 /*
 #ifndef SYSTEM_NO_PARK_INIT
   DrivePrepare();
@@ -1194,6 +1238,13 @@ int main(void)
 	  {
 		  GPIOUpdate();
 		  LastUpdateGPIO = HAL_GetTick();
+	  }
+
+	  if (HAL_GetTick() - LastUpdateADC > SYSTEM_TIMING_MS_ADC)
+	  {
+		  ADCUpdate();
+		  ADCPrepare();
+		  LastUpdateADC = HAL_GetTick();
 	  }
 
 	  /*
