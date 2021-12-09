@@ -34,7 +34,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-/*#pragma pack(push, 1)
+#pragma pack(push, 1)
 #define WHEELS_REQUEST_SIZE 16 				// Размер пакета
 union {
     struct
@@ -100,7 +100,7 @@ union {
 	uint8_t Buffer[HIGH_LEVEL_RESPONCE_SIZE];	// Буфер байт
 }SerialHighLevelResponce;						// Отправляемый в ответ пакет
 #pragma pack(pop)
-
+/*
 typedef struct
 {
 	float Voltage;
@@ -122,9 +122,15 @@ typedef struct
 #define SYSTEM_NO_IMU_INIT
 #define SYSTEM_NO_PARK_INIT
 #define SYSTEM_NO_LED_INIT
+*/
+#define SYSTEM_HARDWARE_UART_LOW (&huart2)
+#define SYSTEM_HARDWARE_UART_LOW_INSTANSE USART2
+#define SYSTEM_HARDWARE_UART_HIGH (&huart3)
+#define SYSTEM_HARDWARE_UART_HIGH_INSTANSE USART3
 
-#define SYSTEM_HARDWARE_UART0 (&huart2)
-#define SYSTEM_HARDWARE_UART1 (&huart3)
+#define SYSTEM_TIMING_MS_UART_LOW 100
+#define SYSTEM_TIMING_MS_UART_HIGH 100
+/*
 #define SYSTEM_HARDWARE_ADC (&hadc1)
 #define SYSTEM_HARDWARE_ADC_IK_FL ADC_CHANNEL_0
 #define SYSTEM_HARDWARE_ADC_IK_FR ADC_CHANNEL_0
@@ -207,8 +213,12 @@ uint16_t MAX_LIGHT = 128;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-//volatile uint8_t UART1ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //OnBoard Plate
-//volatile uint8_t UART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good  //STM Plate
+
+uint32_t LastPkgTimeUartLow = 0;
+uint32_t LastPkgTimeUartHigh = 0;
+volatile uint8_t UartLowReceiveState = 0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
+volatile uint8_t UartHighReceiveState = 0; // 0 - by default; 1 - trouble by CR/LF; 10 - pkg good
+uint8_t* LostByte;
 
 //global for debug
 //float TimeS;
@@ -277,8 +287,6 @@ int16_t ParkingPersentage;
 uint8_t FootAngleDemand;
 uint8_t FootDrive;
 uint8_t FootParking;
-
-uint8_t* LostByte;
 
 uint32_t PackageLastTimeReset_Motherboard;
 uint32_t PackageLastTimeReset_OnBoardPC;
@@ -373,38 +381,49 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/*
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
 	HAL_StatusTypeDef Res;
 
-	if (UartHandle->Instance == USART3){
-		if (USART1ReceiveState == 0){
-			if ((SerialHighLevelRequest.CR != 13) || (SerialHighLevelRequest.LF != 10)){
-				Res = HAL_UART_Receive_DMA(&huart3, LostByte, 1);
-				USART1ReceiveState = 1;
+	if (UartHandle->Instance == SYSTEM_HARDWARE_UART_HIGH_INSTANSE)
+	{
+		if (UartHighReceiveState == 0)
+		{
+			if ((SerialHighLevelRequest.CR != 13) || (SerialHighLevelRequest.LF != 10))
+			{
+				Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, LostByte, 1);
+				UartHighReceiveState = 1;
 			}
-			else{
- 				USART1ReceiveState = 10;
-				Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
+			else
+			{
+				UartHighReceiveState = 10;
+				Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 			}
 		}
-		else{
-			if(USART1ReceiveState == 1){
-				if (LostByte[0] == 13){
-					USART1ReceiveState = 2;
+		else
+		{
+			if(UartHighReceiveState == 1)
+			{
+				if (LostByte[0] == 13)
+				{
+					UartHighReceiveState = 2;
 				}
-				Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)LostByte, 1);
+				Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, (uint8_t*)LostByte, 1);
 			}
-			else{
-				if (USART1ReceiveState == 2){
-					if (LostByte[0] == 10){
-						USART1ReceiveState = 0;
-						Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
+			else
+			{
+				if (UartHighReceiveState == 2)
+				{
+					if (LostByte[0] == 10)
+					{
+						UartHighReceiveState = 0;
+						Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 					}
-					else{
-						USART1ReceiveState = 1;
-						Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)LostByte, 1);
+					else
+					{
+						UartHighReceiveState = 1;
+						Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, (uint8_t*)LostByte, 1);
 					}
 				}
 			}
@@ -412,49 +431,49 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 		if (Res != HAL_OK)
 		{
 			MX_USART3_UART_Init();
-			USART1ReceiveState = 0;
-			Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
+			UartHighReceiveState = 0;
+			Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 		}
 	}
 
-	if (UartHandle->Instance == USART2)
+	if (UartHandle->Instance == SYSTEM_HARDWARE_UART_LOW_INSTANSE)
 	{
-		if (USART2ReceiveState == 0)
+		if (UartLowReceiveState == 0)
 		{
 			if ((SerialControlWheelsResponce.CR != 13) || (SerialControlWheelsResponce.LF != 10))
 			{
-				Res = HAL_UART_Receive_DMA(&huart2, LostByte, 1);
-				USART2ReceiveState = 1;
+				Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_LOW, LostByte, 1);
+				UartLowReceiveState = 1;
 			}
 			else
 			{
-				USART2ReceiveState = 10;
-				Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+				UartLowReceiveState = 10;
+				Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 			}
 		}
 		else
 		{
-			if(USART2ReceiveState == 1)
+			if(UartLowReceiveState == 1)
 			{
 				if (LostByte[0] == 13)
 				{
-					USART2ReceiveState = 2;
+					UartLowReceiveState = 2;
 				}
-				Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)LostByte, 1);
+				Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)LostByte, 1);
 			}
 			else
 			{
-				if (USART2ReceiveState == 2)
+				if (UartLowReceiveState == 2)
 				{
 					if (LostByte[0] == 10)
 					{
-						USART2ReceiveState = 0;
-						Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+						UartLowReceiveState = 0;
+						Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 					}
 					else
 					{
-						USART2ReceiveState = 1;
-						Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)LostByte, 1);
+						UartLowReceiveState = 1;
+						Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)LostByte, 1);
 					}
 				}
 			}
@@ -463,12 +482,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 		if (Res != HAL_OK)
 		{
 			MX_USART2_UART_Init();
-			USART2ReceiveState = 0;
-			Res = HAL_UART_Receive_DMA(&huart2, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+			UartLowReceiveState = 0;
+			Res = HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 		}
 	}
 }
-
+/*
 int HallActualize(float NewStep, float LastStep, float difference)
 {
 	float MIN_VAL = LastStep - difference;
@@ -1056,6 +1075,22 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (HAL_GetTick() - LastPkgTimeUartLow > SYSTEM_TIMING_MS_UART_LOW)
+	  {
+		  MX_USART2_UART_Init();
+		  UartLowReceiveState = 0;
+		  HAL_UART_Receive_DMA(SYSTEM_TIMING_MS_UART_LOW, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
+		  LastPkgTimeUartLow = HAL_GetTick();
+	  }
+
+	  if (HAL_GetTick() - LastPkgTimeUartHigh > SYSTEM_TIMING_MS_UART_HIGH)
+	  {
+		  MX_USART3_UART_Init();
+		  UartHighReceiveState = 0;
+		  HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
+		  LastPkgTimeUartHigh = HAL_GetTick();
+	  }
+
 	  /*BTN_PARK_UP = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4);
 	  BTN_PARK_DOWN = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_5);
 
