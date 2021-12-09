@@ -84,6 +84,8 @@ void Error_Handler(void);
 #define ADC_4_GPIO_Port GPIOB
 #define ADC_5_Pin GPIO_PIN_1
 #define ADC_5_GPIO_Port GPIOB
+#define DRIVER_EN_Pin GPIO_PIN_8
+#define DRIVER_EN_GPIO_Port GPIOE
 #define PWM_LED1_Pin GPIO_PIN_9
 #define PWM_LED1_GPIO_Port GPIOE
 #define PWM_LED2_Pin GPIO_PIN_11

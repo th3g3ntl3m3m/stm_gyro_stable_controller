@@ -101,6 +101,19 @@ union {
 }SerialHighLevelResponce;						// Отправляемый в ответ пакет
 #pragma pack(pop)
 
+typedef struct
+{
+	float Voltage;
+	float Battery;
+	float CurrentLeft;
+	float CurrentRight;
+	float RPSLeft;
+	float RPSRight;
+	float OverCurrCount;
+	float ConnErrCount;
+	float CommTime;
+} LowUartData;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -125,6 +138,8 @@ union {
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN GPIO_PIN_4
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PORT GPIOC
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PIN GPIO_PIN_5
+#define SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PORT GPIOE
+#define SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PIN GPIO_PIN_8
 #define SYSTEM_HARDWARE_PARKING_LEG_UP_PORT GPIOE
 #define SYSTEM_HARDWARE_PARKING_LEG_UP_PIN GPIO_PIN_4
 #define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT GPIOE
@@ -151,6 +166,20 @@ union {
 #define SYSTEM_DELAY_MS_HIGH_UART 100
 #define SYSTEM_DELAY_MS_LOW_UART 100
 
+#define WS2812_DELAY_LEN 48
+
+//#define DELAY_LEN 48
+#define LED_COUNT 16
+#define HIGH 65
+#define LOW 26
+#define ARRAY_LEN DELAY_LEN+LED_COUNT*24
+#define BitIsSet(reg, bit) ((reg & (1<<bit))!=0)
+#define MAX_BRIGHTNESS 50
+uint32_t BUF_DMA[ARRAY_LEN]={0};
+
+uint16_t MAX_LIGHT = 128;
+
+
 #define MOTHERBOARD_DIFF 100
 
 #define PARKING_SPEED_DRIVE 15
@@ -168,16 +197,6 @@ union {
 #define ADC_CH_COUNT 8
 #define STEPPER_DRIVE_MAX 3200
 
-#define DELAY_LEN 48
-#define LED_COUNT 16
-#define HIGH 65
-#define LOW 26
-#define ARRAY_LEN DELAY_LEN+LED_COUNT*24
-#define BitIsSet(reg, bit) ((reg & (1<<bit))!=0)
-#define MAX_BRIGHTNESS 50
-uint32_t BUF_DMA[ARRAY_LEN]={0};
-
-uint16_t MAX_LIGHT = 128;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -195,15 +214,7 @@ volatile uint8_t UART2ReceiveState=0; // 0 - by default; 1 - trouble by CR/LF; 1
 float TimeS;
 //----------------
 
-float Voltage;
-float Battery;
-float CurrentLeft;
-float CurrentRight;
-float RPSLeft;
-float RPSRight;
-float OverCurrCount;
-float ConnErrCount;
-float CommTime;
+LowUartData STM32Gyroscooter;
 
 float PositionIValue;
 float SpeedLinearDemand;
@@ -912,7 +923,7 @@ void WS2812_LIGHT(void){
 void WS2812_CLEAR(void){
 	for (uint8_t i = 0; i < LED_COUNT; ++i){WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, 0, i);}
 }
-void WS2812_Init(void){
+void WS2812_Init(uint8_t LedNumber){
 	for (uint16_t i = DELAY_LEN; i < ARRAY_LEN; i++)BUF_DMA[i] = LOW;
 	WS2812_CLEAR();
 	WS2812_LIGHT();
@@ -955,30 +966,7 @@ void WS2812_ANIMATION_2(void) {
 	}
 }
 }
-void WS2812_ANIMATION_3(void){
-	WS2812_CLEAR();
-	WS2812_PIXEL_RGB_TO_BUF_DMA(128, 0, 0, Pos1);
-	WS2812_PIXEL_RGB_TO_BUF_DMA(0, 0, 128, Pos2);
-	WS2812_LIGHT();
-	//--LED1
-	if (Fl_Top1 == 0) {
-		Pos1++;
-		if (Pos1 == LED_COUNT) {Fl_Top1 = 1;Pos1 = LED_COUNT - 2;}
-	} else if (Fl_Top1 == 1) {
-		Pos1--;
-		if (Pos1 == 0) {Fl_Top1 = 0;Pos1 = 0;
-		}
-	}
-	//--LED2
-	if (Fl_Top2 == 0) {
-		Pos2++;
-		if (Pos2 == LED_COUNT) {Fl_Top2 = 1;Pos2 = LED_COUNT - 2;
-		}
-	} else if (Fl_Top2 == 1) {Pos2--;
-	if (Pos2 == 0) {Fl_Top2 = 0;Pos2 = 0;
-		}
-	}
-}
+
 void WS2812_UPDATE(void){
 	if (FL_BTN==1) {
 		FL_BTN=0;
@@ -1003,8 +991,6 @@ void WS2812_UPDATE(void){
 	case 1:
 		WS2812_ANIMATION_2();
 		break;
-	case 2:
-		WS2812_ANIMATION_3();
 	}
 	Fl_Update = 0;
 }
@@ -1047,16 +1033,16 @@ int main(void)
   MX_TIM4_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-#ifndef SYSTEM_NO_GYRO
+#ifndef SYSTEM_NO_GYRO_INIT
   icm20948_init();
 #endif
-#ifndef SYSTEM_NO_IMU
+#ifndef SYSTEM_NO_IMU_INIT
   IMU_INIT();
 #endif
-#ifndef SYSTEM_NO_PARK
+#ifndef SYSTEM_NO_PARK_INIT
   DrivePrepare();
 #endif
-#ifndef SYSTEM_NO_LED
+#ifndef SYSTEM_NO_LED_INIT
   WS2812_Init();
   ColorRed = rand() % 255;
   ColorGreen = rand() % 255;
@@ -1089,7 +1075,7 @@ int main(void)
 		  LastUpdateADC = HAL_GetTick();
 	  }
 
-	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100) // UART2 RECEIVE FEEDBACK
+	  if (HAL_GetTick() - PackageLastTimeReset_Motherboard > 100)
 	  {
 		  MX_USART2_UART_Init();
 		  USART2ReceiveState = 0;
@@ -1097,13 +1083,13 @@ int main(void)
 		  PackageLastTimeReset_Motherboard = HAL_GetTick();
 	  }
 
-	  /*if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 100)
+	  if (HAL_GetTick() - PackageLastTimeReset_OnBoardPC > 100)
 	  {
-		  MX_USART6_UART_Init();
+		  MX_USART3_UART_Init();
 		  USART1ReceiveState = 0;
-		  HAL_UART_Receive_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+		  HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
-	  }*/
+	  }
 
 	  if ((USART2ReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
@@ -1169,26 +1155,24 @@ int main(void)
 		  }
 	  }
 
-	  /*if ((USART1ReceiveState == 10) && (SerialOnBoardRequest.CR == 13) && (SerialOnBoardRequest.LF == 10))
+	  if ((USART1ReceiveState == 10) && (SerialHighLevelRequest.CR == 13) && (SerialHighLevelRequest.LF == 10))
 	  {
 		  USART1ReceiveState = 0;
-		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_14);
-
-		  if ((SerialOnBoardRequest.Linear <= 0.3) && (SerialOnBoardRequest.Linear >= -0.3))
-		  {
-			  Left = SerialOnBoardRequest.Linear;
-			  Right = SerialOnBoardRequest.Linear;
-		  }
-
-		  SerialOnBoardResponce.WheelLeftSteps = SerialControlWheelsResponce.WheelLeftSteps;
-		  SerialOnBoardResponce.WheelRightSteps = SerialControlWheelsResponce.WheelRightSteps;
-		  SerialOnBoardResponce.CR = 13;
-		  SerialOnBoardResponce.LF = 10;
-
- 		  HAL_UART_Transmit_DMA(&huart4, (uint8_t*)SerialOnBoardResponce.Buffer, ON_BOARD_CONTROL_RESPONCE_SIZE);
-
+		  SerialHighLevelResponce.ControllerState = 0;
+		  SerialHighLevelResponce.WheelLeftSteps = 0;
+		  SerialHighLevelResponce.WheelRightSteps = 0;
+		  SerialHighLevelResponce.BatteryPersentage = 0;
+		  SerialHighLevelResponce.Roll = 0;
+		  SerialHighLevelResponce.Pitch = 0;
+		  SerialHighLevelResponce.Yaw = 0;
+		  SerialHighLevelResponce.CenterIkSensor = 0;
+		  SerialHighLevelResponce.ParameterNumber = 0;
+		  SerialHighLevelResponce.ParametrValue = 0;
+		  SerialHighLevelResponce.CR = 13;
+		  SerialHighLevelResponce.LF = 10;
+ 		  HAL_UART_Transmit_DMA(&huart3, (uint8_t*)SerialHighLevelResponce.Buffer, HIGH_LEVEL_RESPONCE_SIZE);
 		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
-	  }*/
+	  }
 
 	  if (HAL_GetTick() - LastUpdateLogic > 10)
 
