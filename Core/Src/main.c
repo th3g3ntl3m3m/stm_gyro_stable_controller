@@ -377,15 +377,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
 	HAL_StatusTypeDef Res;
 
-	/*if (UartHandle->Instance == USART6){ // Jetson commutation
+	if (UartHandle->Instance == USART3){ // Jetson commutation
 		if (USART1ReceiveState == 0){
-			if ((SerialOnBoardRequest.CR != 13) || (SerialOnBoardRequest.LF != 10)){
-				Res = HAL_UART_Receive_DMA(&huart6, LostByte, 1);
+			if ((SerialHighLevelRequest.CR != 13) || (SerialHighLevelRequest.LF != 10)){
+				Res = HAL_UART_Receive_DMA(&huart3, LostByte, 1);
 				USART1ReceiveState = 1;
 			}
 			else{
  				USART1ReceiveState = 10;
-				Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+				Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 			}
 		}
 		else{
@@ -393,28 +393,28 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 				if (LostByte[0] == 13){
 					USART1ReceiveState = 2;
 				}
-				Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)LostByte, 1);
+				Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)LostByte, 1);
 			}
 			else{
 				if (USART1ReceiveState == 2){
 					if (LostByte[0] == 10){
 						USART1ReceiveState = 0;
-						Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+						Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 					}
 					else{
 						USART1ReceiveState = 1;
-						Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)LostByte, 1);
+						Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)LostByte, 1);
 					}
 				}
 			}
 		}
 		if (Res != HAL_OK)
 		{
-			MX_USART6_UART_Init();
+			MX_USART3_UART_Init();
 			USART1ReceiveState = 0;
-			Res = HAL_UART_Receive_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
+			Res = HAL_UART_Receive_DMA(&huart3, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 		}
-	}*/
+	}
 
 	if (UartHandle->Instance == USART2)
 	{
