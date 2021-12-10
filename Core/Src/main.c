@@ -1158,15 +1158,17 @@ int main(void)
 		  LastUpdateLogic = HAL_GetTick();
 	  }
 
-	  /*if(debug_driver_en)
+	  if(debug_driver_en)
 	  {
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 1);
 		  StepControl(debug_direction, debug_period, debug_steps);
 		  debug_driver_en = 0;
 	  }
 	  else
 	  {
 		  MotopStop();
-	  }*/
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 0);
+	  }
 
 	  SERIAL_CONTROL_LOOP();
 	  //SERIAL_ONBOARD_LOOP();
