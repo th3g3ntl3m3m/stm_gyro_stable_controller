@@ -124,18 +124,21 @@ typedef struct
 {
 	uint16_t* Raw;
 	uint16_t* Sensors;
-	uint16_t* Amperage;
+	float* Amperage;
 } ADCData;
 
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SYSTEM_NO_GYRO_INIT
-#define SYSTEM_NO_IMU_INIT
-/*#define SYSTEM_NO_PARK_INIT
-#define SYSTEM_NO_LED_INIT
-*/
+
+#define SYSTEM_NO_ADC_INIT
+#define SYSTEM_NO_LOW_UART_RESPONCE_LOOP
+#define SYSTEM_NO_HIGH_UART_REQUEST_LOOP
+#define SYSTEM_NO_LOW_UART_PREPARE_RESPONCE_LOOP
+#define SYSTEM_NO_GPIO_LOOP
+#define SYSTEM_NO_ADC_LOOP
+
 #define SYSTEM_HARDWARE_UART_LOW (&huart2)
 #define SYSTEM_HARDWARE_UART_LOW_INSTANSE USART2
 #define SYSTEM_HARDWARE_UART_HIGH (&huart3)
@@ -410,6 +413,7 @@ void ADCInit();
 void ADCUpdate();
 void ADCPrepare();
 uint16_t ReadAdcChanel(uint8_t Channel);
+
 //void ADC_Select_CH(uint8_t ChanelNum);
 //void ADC_Update();
 //void DrivePrepare();
@@ -608,7 +612,7 @@ void ADCInit()
 {
 	uint16_t Raw[SYSTEM_HARDWARE_ADC_Channel_Count];
 	uint16_t Sensors[SYSTEM_HARDWARE_ADC_Channel_Count - 3];
-	uint16_t Amperage[SYSTEM_HARDWARE_ADC_Channel_Count - 5];
+	float Amperage[SYSTEM_HARDWARE_ADC_Channel_Count - 5];
 	AdcModule.Raw = Raw;
 	AdcModule.Sensors = Sensors;
 	AdcModule.Amperage = Amperage;
@@ -617,14 +621,22 @@ void ADCUpdate()
 {
 	for (int i = 0; i < SYSTEM_HARDWARE_ADC_Channel_Count; i++)
 	{
-		AdcModule.ADCRaw[i] = ReadAdcChanel(i);
+		AdcModule.Raw[i] = ReadAdcChanel(i);
 	}
 }
 void ADCPrepare()
 {
-	for (int i = 0; i < SYSTEM_HARDWARE_ADC_Channel_Count - 3; i++)
+	for (int i = 0; i < SYSTEM_HARDWARE_ADC_Channel_Count - 3; i++) // Sensor
 	{
-
+		AdcModule.Sensors[i] = AdcModule.Raw[i] * 1; // No conversion
+	}
+	for (int i = SYSTEM_HARDWARE_ADC_Channel_Count - 3; i < SYSTEM_HARDWARE_ADC_Channel_Count - 2; i++) // Current 30A
+	{
+		AdcModule.Amperage[i - (SYSTEM_HARDWARE_ADC_Channel_Count - 3)] = (AdcModule.Raw[i] * 3.3 / 4095) * 0.066;
+	}
+	for (int i = SYSTEM_HARDWARE_ADC_Channel_Count - 2; i < SYSTEM_HARDWARE_ADC_Channel_Count; i++) // Current 20A
+	{
+		AdcModule.Amperage[i - (SYSTEM_HARDWARE_ADC_Channel_Count - 2)] = (AdcModule.Raw[i] * 3.3 / 4095) * 0.1;
 	}
 }
 uint16_t ReadAdcChanel(uint8_t Channel)
@@ -1210,6 +1222,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+#ifndef SYSTEM_NO_LOW_UART_RESPONCE_LOOP
 	  if (HAL_GetTick() - LastPkgTimeUartLow > SYSTEM_TIMING_MS_UART_LOW)
 	  {
 		  MX_USART2_UART_Init();
@@ -1217,7 +1230,8 @@ int main(void)
 		  HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsResponce.Buffer, WHEELS_RESPONCE_SIZE);
 		  LastPkgTimeUartLow = HAL_GetTick();
 	  }
-
+#endif
+#ifndef SYSTEM_NO_HIGH_UART_REQUEST_LOOP
 	  if (HAL_GetTick() - LastPkgTimeUartHigh > SYSTEM_TIMING_MS_UART_HIGH)
 	  {
 		  MX_USART3_UART_Init();
@@ -1225,7 +1239,8 @@ int main(void)
 		  HAL_UART_Receive_DMA(SYSTEM_HARDWARE_UART_HIGH, (uint8_t*)SerialHighLevelRequest.Buffer, HIGH_LEVEL_REQUEST_SIZE);
 		  LastPkgTimeUartHigh = HAL_GetTick();
 	  }
-
+#endif
+#ifndef SYSTEM_NO_LOW_UART_PREPARE_RESPONCE_LOOP
 	  if ((UartLowReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
 		  UartLowReceiveState = 0;
@@ -1233,20 +1248,24 @@ int main(void)
 		  UartLowPrepareRaw(SYSTEM_HALL_FILTER_MAX, TemplateWheels, 2);
 		  LastPkgTimeUartLow = HAL_GetTick();
 	  }
-
+#endif
+#ifndef SYSTEM_NO_GPIO_LOOP
 	  if (HAL_GetTick() - LastUpdateGPIO > SYSTEM_TIMING_MS_GPIO)
 	  {
 		  GPIOUpdate();
 		  LastUpdateGPIO = HAL_GetTick();
 	  }
-
+#endif
+#ifndef SYSTEM_NO_ADC_INIT
+#ifndef SYSTEM_NO_ADC_LOOP
 	  if (HAL_GetTick() - LastUpdateADC > SYSTEM_TIMING_MS_ADC)
 	  {
 		  ADCUpdate();
 		  ADCPrepare();
 		  LastUpdateADC = HAL_GetTick();
 	  }
-
+#endif
+#endif
 	  /*
 	  if (HAL_GetTick() - LastUpdateLed > 100)
 	  {
@@ -1266,9 +1285,9 @@ int main(void)
 		  LastUpdateADC = HAL_GetTick();
 	  }
 
-	  if ((USART1ReceiveState == 10) && (SerialHighLevelRequest.CR == 13) && (SerialHighLevelRequest.LF == 10))
+	  if ((UartHighReceiveState == 10) && (SerialHighLevelRequest.CR == 13) && (SerialHighLevelRequest.LF == 10))
 	  {
-		  USART1ReceiveState = 0;
+		  UartHighReceiveState = 0;
 		  SerialHighLevelResponce.ControllerState = 0;
 		  SerialHighLevelResponce.WheelLeftSteps = 0;
 		  SerialHighLevelResponce.WheelRightSteps = 0;
@@ -1282,7 +1301,7 @@ int main(void)
 		  SerialHighLevelResponce.CR = 13;
 		  SerialHighLevelResponce.LF = 10;
  		  HAL_UART_Transmit_DMA(&huart3, (uint8_t*)SerialHighLevelResponce.Buffer, HIGH_LEVEL_RESPONCE_SIZE);
-		  PackageLastTimeReset_OnBoardPC = HAL_GetTick();
+		  LastPkgTimeUartHigh = HAL_GetTick();
 	  }
 
 	  if (HAL_GetTick() - LastUpdateLogic > 10)
