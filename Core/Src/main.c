@@ -170,12 +170,19 @@ typedef struct
 #define SYSTEM_HARDWARE_ADC_AMP_12 ADC_CHANNEL_8
 #define SYSTEM_HARDWARE_ADC_AMP_5 ADC_CHANNEL_0
 #define SYSTEM_HARDWARE_ADC_Channel_Count 8
+#define SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT GPIOC
+#define SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN GPIO_PIN_4
+#define SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PORT GPIOC
+#define SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PIN GPIO_PIN_5
+#define SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PORT GPIOE
+#define SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PIN GPIO_PIN_8
 
 #define SYSTEM_TIMING_MS_UART_LOW 100
 #define SYSTEM_TIMING_MS_UART_HIGH 100
 #define SYSTEM_TIMING_MS_GPIO 100
 #define SYSTEM_TIMING_MS_ADC 10
 #define SYSTEM_TIMING_MS_IMU 10
+#define SYSTEM_TIMING_MS_LOGIC 10
 
 #define SYSTEM_HALL_FILTER_MAX 1000
 #define SYSTEM_IMU_ACCEL_FILTER 0.1
@@ -183,12 +190,6 @@ typedef struct
 #define SYSTEM_IMU_MAG_FILTER 0.1
 
 /*
-#define SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT GPIOC
-#define SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN GPIO_PIN_4
-#define SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PORT GPIOC
-#define SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PIN GPIO_PIN_5
-#define SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PORT GPIOE
-#define SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PIN GPIO_PIN_8
 #define SYSTEM_HARDWARE_PWM_CH1_PORT (&htim1)
 #define SYSTEM_HARDWARE_PWM_CH1_CH TIM_CHANNEL_1
 #define SYSTEM_HARDWARE_PWM_CH2_PORT (&htim1)
@@ -287,6 +288,13 @@ FusionVector3 uncalibratedMagnetometer;
 FusionEulerAngles eulerAngles;
 
 InputControl BTControl;
+
+float Front = 0;
+float Turn = 0;
+float SpeedLinear;
+float LeftSpeed;
+float RightSpeed;
+uint8_t BalanceActiveDemand;
 
 #ifndef DEBUG_NO_ADC_ALL
 #ifndef DEBUG_NO_ADC_RAW
@@ -452,6 +460,9 @@ void ImuGyroUpdate();
 void ImuMagUpdate();
 void ImuInit();
 void ImuUpdate();
+void BalancePrepare();
+void StepControl(uint8_t dir, uint32_t period, uint32_t steps);
+void MotopStop();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -730,17 +741,6 @@ uint16_t ReadAdcChanel(uint8_t Channel)
 	HAL_ADC_Stop(SYSTEM_HARDWARE_ADC);
 	return RetVal;
 }
-void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
-{
-	for(int i = 0; i <= steps; i++)
-	{
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, dir);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, i);
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 0);
-		HAL_Delay(period);
-	}
-}
 void SerialLowControlLoop()
 {
 	SerialControlWheelsRequest.ControlMode = 0;
@@ -833,13 +833,12 @@ void ImuUpdate()
 	DebugImuRoll = eulerAngles.angle.roll;
 	DebugImuYaw = eulerAngles.angle.yaw;
 }
-/*
-void BALANCE_Prepare()
+void BalancePrepare()
 {
-	Front = BTFront;
-	Turn = BTTurn;
+	Front = BTControl.Front;
+	Turn = BTControl.Turn;
 
-	if (Battery < 4)
+	if(LowDiagnostic.Battery)
 	{
 		Front = 0;
 		Turn = 0;
@@ -847,15 +846,15 @@ void BALANCE_Prepare()
 
 	if ((fabsf(Front) < 0.001) && (fabsf(Turn) < 0.001) && (fabsf(SpeedLinear) < 0.02) && (fabsf(LeftSpeed - RightSpeed) < 0.02))
 	{
-		if ((Battery < 4) && (BalanceActiveDemand))
+		if ((LowDiagnostic.Battery < 4) && BalanceActiveDemand)
 		{
 			BalanceActiveDemand = false;
 		}
-		else if (Battery > 8)
+		else if (LowDiagnostic.Battery > 8)
 		{
-			BalanceActiveDemand = BTBalanceActive;
+			BalanceActiveDemand = BTControl.Drive;
 		}
-		else if (!BTBalanceActive)
+		else if (!BTControl.Drive)
 		{
 			BalanceActiveDemand = false;
 		}
@@ -866,10 +865,53 @@ void BALANCE_Prepare()
 	Front = (Front > 2) ? 2 : Front;
 	Front = (Front < -0.4) ? -0.4 : Front;
 
-	// Point to add IK sensor
-
-	// Point to add ParkingMode
-
+	if(!BalanceActiveDemand)
+	{
+		if(!FootButtonDown && !FootButtonUp)
+		{
+			StepControl(0, 1, 200);
+		} else if (FootButtonDown && !FootButtonUp)
+		{
+			MotopStop();
+		} else if (!FootButtonDown && FootButtonUp)
+		{
+			StepControl(0, 1, 200);
+		}
+	} else if (BalanceActiveDemand)
+	{
+		if(!FootButtonDown && !FootButtonUp)
+		{
+			StepControl(1, 1, 200);
+		} else if (FootButtonDown && !FootButtonUp)
+		{
+			StepControl(1, 1, 200);
+		} else if (!FootButtonDown && FootButtonUp)
+		{
+			MotopStop();
+		}
+	}
+}
+void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
+{
+	HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PIN, 1);
+	for(int i = 0; i <= steps; i++)
+	{
+		HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PIN, dir);
+		HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN, i);
+		HAL_Delay(1);
+		HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN, 0);
+		HAL_Delay(period);
+	}
+	HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PIN, 0);
+}
+void MotopStop()
+{
+	HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN, 0);
+	HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PIN, 0);
+}
+/*
+void BALANCE_Prepare()
+{
 	if (BalanceActiveDemand)
 	{
 
@@ -1346,20 +1388,19 @@ int main(void)
 	  		  LastUpdateLed = HAL_GetTick();
 	  	  }
 */
-/*
-	  if (HAL_GetTick() - LastUpdateLogic > 10)
 
+	  if (HAL_GetTick() - LastUpdateLogic > SYSTEM_TIMING_MS_LOGIC)
 	  {
-		  BALANCE_Prepare();
-		  BALANCE_Calculate_Speeds();
-		  BALANCE_Position_Linear_Control();
-		  BALANCE_Speed_LinearControl();
-		  BALANCE_Position_Angular_Control();
-		  BALANCE_LOOP();
-		  BALANCE_Result_Loop();
+		  BalancePrepare();
+		  //BALANCE_Calculate_Speeds();
+		  //BALANCE_Position_Linear_Control();
+		  //BALANCE_Speed_LinearControl();
+		  //BALANCE_Position_Angular_Control();
+		  //BALANCE_LOOP();
+		  //BALANCE_Result_Loop();
 		  LastUpdateLogic = HAL_GetTick();
 	  }
-*/
+
 #ifndef SYSTEM_NO_LOW_UART_LOOP
 	  SerialLowControlLoop();
 #endif
