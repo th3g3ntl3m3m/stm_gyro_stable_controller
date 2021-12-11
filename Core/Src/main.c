@@ -752,14 +752,6 @@ void IMU_UPDATE()
 	eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
 }
 
-void SERIAL_ONBOARD_LOOP()
-{
-	SerialOnBoardRequest.Linear = 0;
-	SerialOnBoardRequest.Angular = 0;
-	SerialOnBoardRequest.CR = 13;
-	SerialOnBoardRequest.LF = 10;
-	//HAL_UART_Transmit_DMA(&huart6, (uint8_t*)SerialOnBoardRequest.Buffer, ON_BOARD_CONTROL_REQUEST_SIZE);
-}
 void BALANCE_Prepare()
 {
 	Front = BTFront;
@@ -997,46 +989,6 @@ void BALANCE_Result_Loop()
 	    SerialControlWheelsRequest.WheelLeft = 0;
 	    SerialControlWheelsRequest.WheelRight = 0;
 	}
-}
-float Interpolation(float Value, float Min, float Max)
-{
-    float Result = (Value - Min) / (Max - Min);
-    if (Result > 1)
-    {
-        return 1;
-    }
-    if (Result < 0)
-    {
-        return 0;
-    }
-    return Result;
-}
-
-void ADC_Update()
-{
-	for (int i = 0; i < ADC_CH_COUNT; i++)
-	{
-		ADC_Select_CH(i);
-	}
-
-	dADC0 = ADC_VAL[0];
-	dADC1 = ADC_VAL[1];
-	dADC2 = ADC_VAL[2];
-	dADC3 = ADC_VAL[3];
-	dADC4 = ADC_VAL[4];
-	dADC5 = ADC_VAL[5];
-	dADC6 = ADC_VAL[6];
-	dADC7 = ADC_VAL[7];
-
-}
-
-void MotopStop()
-{
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 0);
-}
-void DrivePrepare()
-{
-	StepControl(0,1,STEPPER_DRIVE_MAX);
 }
 
 //------FLUPDATE
