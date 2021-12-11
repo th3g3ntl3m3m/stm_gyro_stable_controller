@@ -133,9 +133,9 @@ typedef struct
 /* USER CODE BEGIN PD */
 
 #define SYSTEM_NO_ADC_INIT
-#define SYSTEM_NO_LOW_UART_RESPONCE_LOOP
-#define SYSTEM_NO_HIGH_UART_REQUEST_LOOP
-#define SYSTEM_NO_LOW_UART_PREPARE_RESPONCE_LOOP
+
+//#define SYSTEM_NO_LOW_UART_LOOP
+//#define SYSTEM_NO_HIGH_UART_LOOP
 #define SYSTEM_NO_GPIO_LOOP
 #define SYSTEM_NO_ADC_LOOP
 
@@ -252,6 +252,9 @@ uint32_t LastUpdateGPIO = 0;
 uint32_t LastUpdateADC = 0;
 
 ADCData AdcModule;
+
+uint8_t debug_driver_en;
+uint8_t debug_driver_fault_stop;
 
 //global for debug
 //float TimeS;
@@ -413,6 +416,7 @@ void ADCInit();
 void ADCUpdate();
 void ADCPrepare();
 uint16_t ReadAdcChanel(uint8_t Channel);
+void SerialLowControlLoop();
 
 //void ADC_Select_CH(uint8_t ChanelNum);
 //void ADC_Update();
@@ -593,7 +597,7 @@ int HallActualize(int32_t NewStep, int32_t LastStep, int32_t Difference)
 void GPIOUpdate()
 {
 	FootButtonUp = HAL_GPIO_ReadPin(SYSTEM_HARDWARE_PARKING_LEG_UP_PORT, SYSTEM_HARDWARE_PARKING_LEG_UP_PIN);
-	FootButtonUp = HAL_GPIO_ReadPin(SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT, SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN);
+	FootButtonDown = HAL_GPIO_ReadPin(SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT, SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN);
 }
 float Interpolation(float Value, float Min, float Max)
 {
@@ -685,6 +689,27 @@ uint16_t ReadAdcChanel(uint8_t Channel)
 	HAL_ADC_Stop(SYSTEM_HARDWARE_ADC);
 	return RetVal;
 }
+void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
+{
+	for(int i = 0; i <= steps; i++)
+	{
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, dir);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, i);
+		HAL_Delay(1);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 0);
+		HAL_Delay(period);
+	}
+}
+void SerialLowControlLoop()
+{
+	SerialControlWheelsRequest.ControlMode = 0;
+	SerialControlWheelsRequest.ParameterNumber = 0;
+	SerialControlWheelsRequest.WheelLeft = BTFront;
+	SerialControlWheelsRequest.WheelRight = BTTurn;
+	SerialControlWheelsRequest.CR=13;
+	SerialControlWheelsRequest.LF=10;
+	HAL_UART_Transmit_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
+}
 /*
 void IMU_INIT()
 {
@@ -725,16 +750,6 @@ void IMU_UPDATE()
 	calibratedGyroscope = FusionBiasUpdate(&fusionBias, calibratedGyroscope);
 	FusionAhrsUpdateWithoutMagnetometer(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, samplePeriod);
 	eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
-}
-void SERIAL_CONTROL_LOOP()
-{
-	SerialControlWheelsRequest.ControlMode = 0;
-	SerialControlWheelsRequest.ParameterNumber = 0;
-	SerialControlWheelsRequest.WheelLeft = BTFront;
-	SerialControlWheelsRequest.WheelRight = BTTurn;
-	SerialControlWheelsRequest.CR=13;
-	SerialControlWheelsRequest.LF=10;
-	HAL_UART_Transmit_DMA(&huart2, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
 }
 
 void SERIAL_ONBOARD_LOOP()
@@ -1014,17 +1029,6 @@ void ADC_Update()
 	dADC7 = ADC_VAL[7];
 
 }
-void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
-{
-	for(int i = 0; i <= steps; i++)
-	{
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, dir);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, i);
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 0);
-		HAL_Delay(period);
-	}
-}
 
 void MotopStop()
 {
@@ -1222,7 +1226,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-#ifndef SYSTEM_NO_LOW_UART_RESPONCE_LOOP
+#ifndef SYSTEM_NO_LOW_UART_LOOP
 	  if (HAL_GetTick() - LastPkgTimeUartLow > SYSTEM_TIMING_MS_UART_LOW)
 	  {
 		  MX_USART2_UART_Init();
@@ -1231,7 +1235,7 @@ int main(void)
 		  LastPkgTimeUartLow = HAL_GetTick();
 	  }
 #endif
-#ifndef SYSTEM_NO_HIGH_UART_REQUEST_LOOP
+#ifndef SYSTEM_NO_HIGH_UART_LOOP
 	  if (HAL_GetTick() - LastPkgTimeUartHigh > SYSTEM_TIMING_MS_UART_HIGH)
 	  {
 		  MX_USART3_UART_Init();
@@ -1240,7 +1244,7 @@ int main(void)
 		  LastPkgTimeUartHigh = HAL_GetTick();
 	  }
 #endif
-#ifndef SYSTEM_NO_LOW_UART_PREPARE_RESPONCE_LOOP
+#ifndef SYSTEM_NO_LOW_UART_LOOP
 	  if ((UartLowReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
 		  UartLowReceiveState = 0;
@@ -1278,24 +1282,20 @@ int main(void)
 		  IMU_UPDATE();
 		  LastUpdateIMU = HAL_GetTick();
 	  }
-
-	  if (HAL_GetTick() - LastUpdateADC > 10)
-	  {
-		  ADC_Update();
-		  LastUpdateADC = HAL_GetTick();
-	  }
-
+		*/
+#ifndef SYSTEM_NO_HIGH_UART_LOOP
 	  if ((UartHighReceiveState == 10) && (SerialHighLevelRequest.CR == 13) && (SerialHighLevelRequest.LF == 10))
 	  {
+		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
 		  UartHighReceiveState = 0;
 		  SerialHighLevelResponce.ControllerState = 0;
-		  SerialHighLevelResponce.WheelLeftSteps = 0;
-		  SerialHighLevelResponce.WheelRightSteps = 0;
-		  SerialHighLevelResponce.BatteryPersentage = 0;
-		  SerialHighLevelResponce.Roll = 0;
-		  SerialHighLevelResponce.Pitch = 0;
-		  SerialHighLevelResponce.Yaw = 0;
-		  SerialHighLevelResponce.CenterIkSensor = 0;
+		  SerialHighLevelResponce.WheelLeftSteps = 228;
+		  SerialHighLevelResponce.WheelRightSteps = 1337;
+		  SerialHighLevelResponce.BatteryPersentage = 99;
+		  SerialHighLevelResponce.Roll = 174;
+		  SerialHighLevelResponce.Pitch = 666;
+		  SerialHighLevelResponce.Yaw = 777;
+		  SerialHighLevelResponce.CenterIkSensor = 150;
 		  SerialHighLevelResponce.ParameterNumber = 0;
 		  SerialHighLevelResponce.ParametrValue = 0;
 		  SerialHighLevelResponce.CR = 13;
@@ -1303,7 +1303,8 @@ int main(void)
  		  HAL_UART_Transmit_DMA(&huart3, (uint8_t*)SerialHighLevelResponce.Buffer, HIGH_LEVEL_RESPONCE_SIZE);
 		  LastPkgTimeUartHigh = HAL_GetTick();
 	  }
-
+#endif
+	  	  /*
 	  if (HAL_GetTick() - LastUpdateLogic > 10)
 
 	  {
@@ -1326,10 +1327,9 @@ int main(void)
 	  {
 		  MotopStop();
 	  }*/
-
-	  //SERIAL_CONTROL_LOOP();
-	  //SERIAL_ONBOARD_LOOP();
-
+#ifndef SYSTEM_NO_LOW_UART_LOOP
+	  SERIAL_CONTROL_LOOP();
+#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
