@@ -65,7 +65,7 @@ union {
     uint8_t Buffer[WHEELS_RESPONCE_SIZE];	// Буффер байт
 } SerialControlWheelsResponce;				// Пакет приема ответного сообщения с платы гироскутера
 
-#define HIGH_LEVEL_REQUEST_SIZE 14				// Размер пакета
+#define HIGH_LEVEL_REQUEST_SIZE 16				// Размер пакета
 union {
 	struct
 	{
@@ -139,22 +139,27 @@ typedef struct
 //#define SYSTEM_NO_GPIO_LOOP
 //#define SYSTEM_NO_ADC_LOOP
 
+//#define DEBUG_NO_ADC_ALL
+//#define DEBUG_NO_ADC_RAW
+//#define DEBUG_NO_ADC_SEN
+//#define DEBUG_NO_ADC_AMP
+
 #define SYSTEM_HARDWARE_UART_LOW (&huart2)
 #define SYSTEM_HARDWARE_UART_LOW_INSTANSE USART2
 #define SYSTEM_HARDWARE_UART_HIGH (&huart3)
 #define SYSTEM_HARDWARE_UART_HIGH_INSTANSE USART3
 #define SYSTEM_HARDWARE_PARKING_LEG_UP_PORT GPIOE
-#define SYSTEM_HARDWARE_PARKING_LEG_UP_PIN GPIO_PIN_4
+#define SYSTEM_HARDWARE_PARKING_LEG_UP_PIN GPIO_PIN_5
 #define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PORT GPIOE
-#define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN GPIO_PIN_5
+#define SYSTEM_HARDWARE_PARKING_LEG_DOWN_PIN GPIO_PIN_4
 #define SYSTEM_HARDWARE_ADC (&hadc1)
-#define SYSTEM_HARDWARE_ADC_IK_FL ADC_CHANNEL_0
-#define SYSTEM_HARDWARE_ADC_IK_FR ADC_CHANNEL_0
-#define SYSTEM_HARDWARE_ADC_IK_BL ADC_CHANNEL_0
-#define SYSTEM_HARDWARE_ADC_IK_BR ADC_CHANNEL_0
-#define SYSTEM_HARDWARE_ADC_IK_CN ADC_CHANNEL_0
-#define SYSTEM_HARDWARE_ADC_AMP_36 ADC_CHANNEL_0
-#define SYSTEM_HARDWARE_ADC_AMP_12 ADC_CHANNEL_0
+#define SYSTEM_HARDWARE_ADC_IK_FL ADC_CHANNEL_11
+#define SYSTEM_HARDWARE_ADC_IK_FR ADC_CHANNEL_12
+#define SYSTEM_HARDWARE_ADC_IK_BL ADC_CHANNEL_1
+#define SYSTEM_HARDWARE_ADC_IK_BR ADC_CHANNEL_10
+#define SYSTEM_HARDWARE_ADC_IK_CN ADC_CHANNEL_2
+#define SYSTEM_HARDWARE_ADC_AMP_36 ADC_CHANNEL_9
+#define SYSTEM_HARDWARE_ADC_AMP_12 ADC_CHANNEL_8
 #define SYSTEM_HARDWARE_ADC_AMP_5 ADC_CHANNEL_0
 #define SYSTEM_HARDWARE_ADC_Channel_Count 8
 
@@ -253,8 +258,32 @@ uint32_t LastUpdateADC = 0;
 
 ADCData AdcModule;
 
-uint8_t debug_driver_en;
-uint8_t debug_driver_fault_stop;
+uint8_t DebugDriverFaultStop = 0;
+
+#ifndef DEBUG_NO_ADC_ALL
+#ifndef DEBUG_NO_ADC_RAW
+uint16_t DebugADCRawFL;
+uint16_t DebugADCRawFR;
+uint16_t DebugADCRawBL;
+uint16_t DebugADCRawBR;
+uint16_t DebugADCRawCN;
+uint16_t DebugADCRaw36;
+uint16_t DebugADCRaw12;
+uint16_t DebugADCRaw5;
+#endif
+#ifndef DEBUG_NO_ADC_SEN
+uint16_t DebugADCSenFL;
+uint16_t DebugADCSenFR;
+uint16_t DebugADCSenBL;
+uint16_t DebugADCSenBR;
+uint16_t DebugADCSenCN;
+#endif
+#ifndef DEBUG_NO_ADC_AMP
+float DebugADCAmp36;
+float DebugADCAmp12;
+float DebugADCAmp5;
+#endif
+#endif
 
 //global for debug
 //float TimeS;
@@ -627,6 +656,18 @@ void ADCUpdate()
 	{
 		AdcModule.Raw[i] = ReadAdcChanel(i);
 	}
+#ifndef DEBUG_NO_ADC_ALL
+#ifndef DEBUG_NO_ADC_RAW
+	DebugADCRawFL = AdcModule.Raw[0];
+	DebugADCRawFR = AdcModule.Raw[1];
+	DebugADCRawBL = AdcModule.Raw[2];
+	DebugADCRawBR = AdcModule.Raw[3];
+	DebugADCRawCN = AdcModule.Raw[4];
+	DebugADCRaw36 = AdcModule.Raw[5];
+	DebugADCRaw12 = AdcModule.Raw[6];
+	DebugADCRaw5 = AdcModule.Raw[7];
+#endif
+#endif
 }
 void ADCPrepare()
 {
@@ -1220,7 +1261,7 @@ int main(void)
 	  }
 #endif
 #endif
-	  /*
+/*
 	  if (HAL_GetTick() - LastUpdateLed > 100)
 	  {
 		  WS2812_UPDATE();
