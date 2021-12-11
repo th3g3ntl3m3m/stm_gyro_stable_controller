@@ -281,6 +281,7 @@ uint16_t dADC7;
 uint16_t dADC8;
 uint16_t dADC9;
 
+uint8_t debug_driver_fault_stop = 1;
 uint8_t debug_driver_en = 0;
 uint8_t debug_direction = 0;
 uint32_t debug_steps = 10;
@@ -1158,7 +1159,7 @@ int main(void)
 		  LastUpdateLogic = HAL_GetTick();
 	  }
 
-	  if(debug_driver_en)
+	  /*if(debug_driver_en)
 	  {
 		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 1);
 		  StepControl(debug_direction, debug_period, debug_steps);
@@ -1168,7 +1169,42 @@ int main(void)
 	  {
 		  MotopStop();
 		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 0);
-	  }
+	  }*/
+
+	  if (!debug_driver_fault_stop)
+	  	  {
+	  		  if (debug_driver_en)
+	  		  {
+	  			  if (!BTN_PARK_UP)
+	  			  {
+	  				  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 1);
+	  				  StepControl(0, 1, 10);
+	  			  }
+	  			  else
+	  			  {
+	  				  StepControl(0, 1, 0);
+	  				  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 0);
+	  			  }
+	  		  }
+	  		  else
+	  		  {
+	  			  if (!BTN_PARK_DOWN)
+	  			  {
+	  				  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 1);
+	  				  StepControl(1, 1, 10);
+	  			  }
+	  			  else
+	  			  {
+	  				  StepControl(1, 1, 0);
+	  				  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 0);
+	  			  }
+	  		  }
+	  	  }
+	  	  else
+	  	  {
+	  		  StepControl(0, 1, 0);
+	  		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, 0);
+	  	  }
 
 	  SERIAL_CONTROL_LOOP();
 	  //SERIAL_ONBOARD_LOOP();
