@@ -127,6 +127,13 @@ typedef struct
 	float* Amperage;
 } ADCData;
 
+typedef struct
+{
+	float Front;
+	float Turn;
+	float Drive;
+} InputControl;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -261,14 +268,25 @@ uint8_t FootButtonDown = 0;
 uint32_t LastUpdateGPIO = 0;
 uint32_t LastUpdateADC = 0;
 uint32_t LastUpdateIMU = 0;
+uint32_t LastUpdateLogic = 0;
 
 ADCData AdcModule;
-
-uint8_t DebugDriverFaultStop = 0;
 
 axises ResGyro;
 axises ResAccel;
 axises ResMag;
+FusionBias fusionBias;
+FusionAhrs fusionAhrs;
+float samplePeriod = 0.01f;
+FusionVector3 gyroscopeSensitivity;
+FusionVector3 accelerometerSensitivity;
+FusionVector3 hardIronBias;
+FusionVector3 uncalibratedGyroscope;
+FusionVector3 uncalibratedAccelerometer;
+FusionVector3 uncalibratedMagnetometer;
+FusionEulerAngles eulerAngles;
+
+InputControl BTControl;
 
 #ifndef DEBUG_NO_ADC_ALL
 #ifndef DEBUG_NO_ADC_RAW
@@ -306,6 +324,12 @@ float DebugImuGyrZ;
 float DebugImuMagX;
 float DebugImuMagY;
 float DebugImuMagZ;
+
+float DebugImuRoll;
+float DebugImuPitch;
+float DebugImuYaw;
+
+uint8_t DebugDriverFaultStop = 0;
 
 //global for debug
 //float TimeS;
@@ -393,8 +417,6 @@ float HallRightStep;
 
 uint8_t ParameterNumber;
 
-float BTFront = 0;
-float BTTurn = 0;
 float Front = 0;
 float Turn = 0;
 
@@ -406,53 +428,10 @@ float PositionLinear;
 uint8_t BalanceActiveDemand;
 uint8_t BTBalanceActive;
 
-axises my_gyro;
-axises my_accel;
-axises my_mag;
-
-FusionBias fusionBias;
-FusionAhrs fusionAhrs;
-float samplePeriod = 0.01f;
-FusionVector3 gyroscopeSensitivity;
-FusionVector3 accelerometerSensitivity;
-FusionVector3 hardIronBias;
-FusionVector3 uncalibratedGyroscope;
-FusionVector3 uncalibratedAccelerometer;
-FusionVector3 uncalibratedMagnetometer;
-FusionEulerAngles eulerAngles;
-
-uint16_t ADC_VAL[ADC_CH_COUNT] = {0,};
-
-uint8_t BTN_PARK_UP;
-uint8_t BTN_PARK_DOWN;
-
-uint16_t dADC0;
-uint16_t dADC1;
-uint16_t dADC2;
-uint16_t dADC3;
-uint16_t dADC4;
-uint16_t dADC5;
-uint16_t dADC6;
-uint16_t dADC7;
-uint16_t dADC8;
-uint16_t dADC9;
-
 uint8_t debug_driver_en = 0;
 uint8_t debug_direction = 0;
 uint32_t debug_steps = 10;
 uint32_t debug_period = 1600;
-
-uint8_t debug_led_en = 0;
-uint8_t debug_led_mode = 0;
-
-uint8_t debug_ADC_0 = 0;
-uint8_t debug_ADC_1 = 0;
-uint8_t debug_ADC_2 = 0;
-uint8_t debug_ADC_3 = 0;
-uint8_t debug_ADC_4 = 0;
-uint8_t debug_ADC_5 = 0;
-uint8_t debug_ADC_6 = 0;
-uint8_t debug_ADC_7 = 0;
 */
 /* USER CODE END PV */
 
@@ -471,11 +450,8 @@ void SerialLowControlLoop();
 void ImuAccelUpdate();
 void ImuGyroUpdate();
 void ImuMagUpdate();
-//void ADC_Select_CH(uint8_t ChanelNum);
-//void ADC_Update();
-//void DrivePrepare();
-//void DriveToStep(uint8_t dir, uint32_t period, uint32_t steps);
-//void DriveStop();
+void ImuInit();
+void ImuUpdate();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -769,8 +745,8 @@ void SerialLowControlLoop()
 {
 	SerialControlWheelsRequest.ControlMode = 0;
 	SerialControlWheelsRequest.ParameterNumber = 0;
-	SerialControlWheelsRequest.WheelLeft = 0;
-	SerialControlWheelsRequest.WheelRight = 0;
+	SerialControlWheelsRequest.WheelLeft = BTControl.Front;
+	SerialControlWheelsRequest.WheelRight = BTControl.Turn;
 	SerialControlWheelsRequest.CR=13;
 	SerialControlWheelsRequest.LF=10;
 	HAL_UART_Transmit_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
@@ -814,8 +790,7 @@ void ImuMagUpdate()
 	DebugImuMagY = ResMag.y;
 	DebugImuMagZ = ResMag.z;
 }
-/*
-void IMU_INIT()
+void ImuInit()
 {
 	gyroscopeSensitivity.axis.x = 1.0f;
 	gyroscopeSensitivity.axis.y = 1.0f;
@@ -832,30 +807,33 @@ void IMU_INIT()
 	FusionBiasInitialise(&fusionBias, 0.5f, samplePeriod);
 	FusionAhrsInitialise(&fusionAhrs, 0.5f);
 }
-void IMU_UPDATE()
+void ImuUpdate()
 {
-	icm20948_gyro_read_dps(&my_gyro);
-	icm20948_accel_read_g(&my_accel);
+	uncalibratedGyroscope.axis.x = ResGyro.x;
+	uncalibratedGyroscope.axis.y = ResGyro.y;
+	uncalibratedGyroscope.axis.z = ResGyro.z;
 
-	icm20948_accel_read(&my_accel);
-	icm20948_gyro_read(&my_gyro);
+	uncalibratedAccelerometer.axis.x = ResAccel.x;
+	uncalibratedAccelerometer.axis.y = ResAccel.y;
+	uncalibratedAccelerometer.axis.z = ResAccel.z;
 
-	uncalibratedGyroscope.axis.x = my_gyro.x;
-	uncalibratedGyroscope.axis.y = my_gyro.y;
-	uncalibratedGyroscope.axis.z = my_gyro.z;
-
-	uncalibratedAccelerometer.axis.x = my_accel.x;
-	uncalibratedAccelerometer.axis.y = my_accel.y;
-	uncalibratedAccelerometer.axis.z = my_accel.z;
+	uncalibratedMagnetometer.axis.x = ResMag.x;
+	uncalibratedMagnetometer.axis.y = ResMag.y;
+	uncalibratedMagnetometer.axis.z = ResMag.z;
 
 	FusionVector3 calibratedGyroscope = FusionCalibrationInertial(uncalibratedGyroscope, FUSION_ROTATION_MATRIX_IDENTITY, gyroscopeSensitivity, FUSION_VECTOR3_ZERO);
 	FusionVector3 calibratedAccelerometer = FusionCalibrationInertial(uncalibratedAccelerometer, FUSION_ROTATION_MATRIX_IDENTITY, accelerometerSensitivity, FUSION_VECTOR3_ZERO);
+	FusionVector3 calibratedMagnetometer = FusionCalibrationMagnetic(uncalibratedMagnetometer, FUSION_ROTATION_MATRIX_IDENTITY, hardIronBias);
 
 	calibratedGyroscope = FusionBiasUpdate(&fusionBias, calibratedGyroscope);
-	FusionAhrsUpdateWithoutMagnetometer(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, samplePeriod);
+	FusionAhrsUpdate(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, calibratedMagnetometer, samplePeriod);
 	eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
-}
 
+	DebugImuPitch = eulerAngles.angle.pitch;
+	DebugImuRoll = eulerAngles.angle.roll;
+	DebugImuYaw = eulerAngles.angle.yaw;
+}
+/*
 void BALANCE_Prepare()
 {
 	Front = BTFront;
@@ -1264,10 +1242,9 @@ int main(void)
   icm20948_init();
   ak09916_init();
 #endif
-/*
 #ifndef SYSTEM_NO_IMU_INIT
-  IMU_INIT();
-#endif*/
+  ImuInit();
+#endif
 /*
 #ifndef SYSTEM_NO_LED_INIT
   WS2812_Init();
@@ -1332,37 +1309,28 @@ int main(void)
 		  ImuAccelUpdate();
 		  ImuGyroUpdate();
 		  ImuMagUpdate();
-
-
+		  ImuUpdate();
 		  LastUpdateIMU = HAL_GetTick();
 	  }
 
-/*
-	  if (HAL_GetTick() - LastUpdateLed > 100)
-	  {
-		  WS2812_UPDATE();
-		  LastUpdateLed = HAL_GetTick();
-	  }
-
-	  if (HAL_GetTick() - LastUpdateIMU > 1)
-	  {
-		  IMU_UPDATE();
-		  LastUpdateIMU = HAL_GetTick();
-	  }
-		*/
 #ifndef SYSTEM_NO_HIGH_UART_LOOP
 	  if ((UartHighReceiveState == 10) && (SerialHighLevelRequest.CR == 13) && (SerialHighLevelRequest.LF == 10))
 	  {
 		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+
+		  BTControl.Front = SerialHighLevelRequest.Linear;
+		  BTControl.Turn = SerialHighLevelRequest.Angular;
+		  BTControl.Drive = SerialHighLevelRequest.DriveMode;
+
 		  UartHighReceiveState = 0;
-		  SerialHighLevelResponce.ControllerState = 0;
-		  SerialHighLevelResponce.WheelLeftSteps = 228;
-		  SerialHighLevelResponce.WheelRightSteps = 1337;
-		  SerialHighLevelResponce.BatteryPersentage = 99;
-		  SerialHighLevelResponce.Roll = 174;
-		  SerialHighLevelResponce.Pitch = 666;
-		  SerialHighLevelResponce.Yaw = 777;
-		  SerialHighLevelResponce.CenterIkSensor = 150;
+		  SerialHighLevelResponce.ControllerState = -1;
+		  SerialHighLevelResponce.WheelLeftSteps = WheelsHall[0].OutputHall;
+		  SerialHighLevelResponce.WheelRightSteps = WheelsHall[1].OutputHall;
+		  SerialHighLevelResponce.BatteryPersentage = LowDiagnostic.Battery;
+		  SerialHighLevelResponce.Roll = eulerAngles.angle.roll;
+		  SerialHighLevelResponce.Pitch = eulerAngles.angle.pitch;
+		  SerialHighLevelResponce.Yaw = eulerAngles.angle.yaw;
+		  SerialHighLevelResponce.CenterIkSensor = AdcModule.Sensors[4];
 		  SerialHighLevelResponce.ParameterNumber = 0;
 		  SerialHighLevelResponce.ParametrValue = 0;
 		  SerialHighLevelResponce.CR = 13;
@@ -1371,7 +1339,14 @@ int main(void)
 		  LastPkgTimeUartHigh = HAL_GetTick();
 	  }
 #endif
-	  	  /*
+/*
+	  	  if (HAL_GetTick() - LastUpdateLed > 100)
+	  	  {
+	  		  WS2812_UPDATE();
+	  		  LastUpdateLed = HAL_GetTick();
+	  	  }
+*/
+/*
 	  if (HAL_GetTick() - LastUpdateLogic > 10)
 
 	  {
@@ -1384,16 +1359,7 @@ int main(void)
 		  BALANCE_Result_Loop();
 		  LastUpdateLogic = HAL_GetTick();
 	  }
-
-	  if(debug_driver_en)
-	  {
-		  StepControl(debug_direction, debug_period, debug_steps);
-		  debug_driver_en = 0;
-	  }
-	  else
-	  {
-		  MotopStop();
-	  }*/
+*/
 #ifndef SYSTEM_NO_LOW_UART_LOOP
 	  SerialLowControlLoop();
 #endif
