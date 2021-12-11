@@ -132,12 +132,12 @@ typedef struct
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define SYSTEM_NO_ADC_INIT
+//#define SYSTEM_NO_ADC_INIT
 
 //#define SYSTEM_NO_LOW_UART_LOOP
 //#define SYSTEM_NO_HIGH_UART_LOOP
-#define SYSTEM_NO_GPIO_LOOP
-#define SYSTEM_NO_ADC_LOOP
+//#define SYSTEM_NO_GPIO_LOOP
+//#define SYSTEM_NO_ADC_LOOP
 
 #define SYSTEM_HARDWARE_UART_LOW (&huart2)
 #define SYSTEM_HARDWARE_UART_LOW_INSTANSE USART2
@@ -704,8 +704,8 @@ void SerialLowControlLoop()
 {
 	SerialControlWheelsRequest.ControlMode = 0;
 	SerialControlWheelsRequest.ParameterNumber = 0;
-	SerialControlWheelsRequest.WheelLeft = BTFront;
-	SerialControlWheelsRequest.WheelRight = BTTurn;
+	SerialControlWheelsRequest.WheelLeft = 0;
+	SerialControlWheelsRequest.WheelRight = 0;
 	SerialControlWheelsRequest.CR=13;
 	SerialControlWheelsRequest.LF=10;
 	HAL_UART_Transmit_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
@@ -1163,9 +1163,6 @@ int main(void)
   IMU_INIT();
 #endif*/
 /*
-#ifndef SYSTEM_NO_PARK_INIT
-  DrivePrepare();
-#endif
 #ifndef SYSTEM_NO_LED_INIT
   WS2812_Init();
   ColorRed = rand() % 255;
@@ -1199,6 +1196,7 @@ int main(void)
 #ifndef SYSTEM_NO_LOW_UART_LOOP
 	  if ((UartLowReceiveState == 10) && (SerialControlWheelsResponce.CR == 13) && (SerialControlWheelsResponce.LF == 10))
 	  {
+		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
 		  UartLowReceiveState = 0;
 		  int32_t TemplateWheels[2] = { SerialControlWheelsResponce.WheelLeftSteps, SerialControlWheelsResponce.WheelRightSteps };
 		  UartLowPrepareRaw(SYSTEM_HALL_FILTER_MAX, TemplateWheels, 2);
@@ -1238,7 +1236,7 @@ int main(void)
 #ifndef SYSTEM_NO_HIGH_UART_LOOP
 	  if ((UartHighReceiveState == 10) && (SerialHighLevelRequest.CR == 13) && (SerialHighLevelRequest.LF == 10))
 	  {
-		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
+		  HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
 		  UartHighReceiveState = 0;
 		  SerialHighLevelResponce.ControllerState = 0;
 		  SerialHighLevelResponce.WheelLeftSteps = 228;
@@ -1280,7 +1278,7 @@ int main(void)
 		  MotopStop();
 	  }*/
 #ifndef SYSTEM_NO_LOW_UART_LOOP
-	  SERIAL_CONTROL_LOOP();
+	  SerialLowControlLoop();
 #endif
     /* USER CODE END WHILE */
 
