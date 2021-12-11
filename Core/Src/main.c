@@ -133,6 +133,7 @@ typedef struct
 /* USER CODE BEGIN PD */
 
 //#define SYSTEM_NO_ADC_INIT
+//#define SYSTEM_NO_IMU_HW_INIT
 
 //#define SYSTEM_NO_LOW_UART_LOOP
 //#define SYSTEM_NO_HIGH_UART_LOOP
@@ -167,8 +168,12 @@ typedef struct
 #define SYSTEM_TIMING_MS_UART_HIGH 100
 #define SYSTEM_TIMING_MS_GPIO 100
 #define SYSTEM_TIMING_MS_ADC 10
+#define SYSTEM_TIMING_MS_IMU 10
 
 #define SYSTEM_HALL_FILTER_MAX 1000
+#define SYSTEM_IMU_ACCEL_FILTER 0.1
+#define SYSTEM_IMU_GYRO_FILTER 0.1
+#define SYSTEM_IMU_MAG_FILTER 0.1
 
 /*
 #define SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT GPIOC
@@ -255,10 +260,15 @@ uint8_t FootButtonDown = 0;
 
 uint32_t LastUpdateGPIO = 0;
 uint32_t LastUpdateADC = 0;
+uint32_t LastUpdateIMU = 0;
 
 ADCData AdcModule;
 
 uint8_t DebugDriverFaultStop = 0;
+
+axises ResGyro;
+axises ResAccel;
+axises ResMag;
 
 #ifndef DEBUG_NO_ADC_ALL
 #ifndef DEBUG_NO_ADC_RAW
@@ -284,6 +294,18 @@ float DebugADCAmp12;
 float DebugADCAmp5;
 #endif
 #endif
+
+float DebugImuAccX;
+float DebugImuAccY;
+float DebugImuAccZ;
+
+float DebugImuGyrX;
+float DebugImuGyrY;
+float DebugImuGyrZ;
+
+float DebugImuMagX;
+float DebugImuMagY;
+float DebugImuMagZ;
 
 //global for debug
 //float TimeS;
@@ -446,7 +468,9 @@ void ADCUpdate();
 void ADCPrepare();
 uint16_t ReadAdcChanel(uint8_t Channel);
 void SerialLowControlLoop();
-
+void ImuAccelUpdate();
+void ImuGyroUpdate();
+void ImuMagUpdate();
 //void ADC_Select_CH(uint8_t ChanelNum);
 //void ADC_Update();
 //void DrivePrepare();
@@ -750,6 +774,45 @@ void SerialLowControlLoop()
 	SerialControlWheelsRequest.CR=13;
 	SerialControlWheelsRequest.LF=10;
 	HAL_UART_Transmit_DMA(SYSTEM_HARDWARE_UART_LOW, (uint8_t*)SerialControlWheelsRequest.Buffer, WHEELS_REQUEST_SIZE);
+}
+void ImuAccelUpdate()
+{
+	axises NewData;
+	icm20948_accel_read(&NewData);
+
+	ResAccel.x += roundf((((NewData.x / 16384) - ResAccel.x) * SYSTEM_IMU_ACCEL_FILTER) * 100) / 100;
+	ResAccel.y += roundf((((NewData.y / 16384) - ResAccel.y) * SYSTEM_IMU_ACCEL_FILTER) * 100) / 100;
+	ResAccel.z += roundf((((NewData.z / 16384) - ResAccel.z) * SYSTEM_IMU_ACCEL_FILTER) * 100) / 100;
+
+	DebugImuAccX = ResAccel.x;
+	DebugImuAccY = ResAccel.y;
+	DebugImuAccZ = ResAccel.z;
+}
+void ImuGyroUpdate()
+{
+	axises NewData;
+	icm20948_gyro_read(&NewData);
+
+	ResGyro.x += roundf((((NewData.x / 16.4) - ResGyro.x) * SYSTEM_IMU_GYRO_FILTER) * 100) / 100;
+	ResGyro.y += roundf((((NewData.y / 16.4) - ResGyro.y) * SYSTEM_IMU_GYRO_FILTER) * 100) / 100;
+	ResGyro.z += roundf((((NewData.z / 16.4) - ResGyro.z) * SYSTEM_IMU_GYRO_FILTER) * 100) / 100;
+
+	DebugImuGyrX = ResGyro.x;
+	DebugImuGyrY = ResGyro.y;
+	DebugImuGyrZ = ResGyro.z;
+}
+void ImuMagUpdate()
+{
+	axises NewData;
+	ak09916_mag_read(&NewData);
+
+	ResMag.x += roundf((((NewData.x * 0.15) - ResMag.x) * SYSTEM_IMU_MAG_FILTER) * 100) / 100;
+	ResMag.y += roundf((((NewData.y * 0.15) - ResMag.y) * SYSTEM_IMU_MAG_FILTER) * 100) / 100;
+	ResMag.z += roundf((((NewData.z * 0.15) - ResMag.z) * SYSTEM_IMU_MAG_FILTER) * 100) / 100;
+
+	DebugImuMagX = ResMag.x;
+	DebugImuMagY = ResMag.y;
+	DebugImuMagZ = ResMag.z;
 }
 /*
 void IMU_INIT()
@@ -1197,9 +1260,11 @@ int main(void)
 #ifndef SYSTEM_NO_ADC_INIT
   ADCInit();
 #endif
-/*#ifndef SYSTEM_NO_GYRO_INIT
+#ifndef SYSTEM_NO_IMU_HW_INIT
   icm20948_init();
+  ak09916_init();
 #endif
+/*
 #ifndef SYSTEM_NO_IMU_INIT
   IMU_INIT();
 #endif*/
@@ -1261,6 +1326,17 @@ int main(void)
 	  }
 #endif
 #endif
+
+	  if(HAL_GetTick() - LastUpdateIMU > SYSTEM_TIMING_MS_IMU)
+	  {
+		  ImuAccelUpdate();
+		  ImuGyroUpdate();
+		  ImuMagUpdate();
+
+
+		  LastUpdateIMU = HAL_GetTick();
+	  }
+
 /*
 	  if (HAL_GetTick() - LastUpdateLed > 100)
 	  {
