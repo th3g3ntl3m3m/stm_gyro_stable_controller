@@ -1,5 +1,5 @@
 #STM Touch Studio user settings - do not edit
-#Sat Dec 11 07:33:54 YEKT 2021
+#Sat Dec 11 07:48:39 YEKT 2021
 ExprVariable.Col0ModelIdx=0
 ExprVariable.Col0Width=15
 ExprVariable.Col1ModelIdx=1
@@ -11,7 +11,7 @@ ExprVariable.Col3Width=129
 ExprVariable.Col4ModelIdx=4
 ExprVariable.Col4Width=40
 ExprVariable.Number=0
-GdbVar.ExecDate=1639189941539
+GdbVar.ExecDate=1639190574527
 GdbVar.LastExecRelative=Debug\\stm_gyro_stable_controller.elf
 GdbVar.Version=1
 GeneralPurpose.HorizontalSplit=462
@@ -533,9 +533,9 @@ Variable9.Color=0x00cccc
 Variable9.Name=CurrentLeft
 Variable9.Type=float
 Viewers.Synchronized=false
-ViewersLayout.IntegratedLayout.Weight.0=0.3508771929824561
-ViewersLayout.IntegratedLayout.Weight.1=0.23426212590299278
-ViewersLayout.IntegratedLayout.Weight.2=0.4086687306501548
+ViewersLayout.IntegratedLayout.Weight.0=0.34881320949432404
+ViewersLayout.IntegratedLayout.Weight.1=0.23323013415892674
+ViewersLayout.IntegratedLayout.Weight.2=0.4117647058823529
 ViewersLayout.IntegratedLayout.Weight.Size=3
 ViewersLayout.Position.0=-1
 ViewersLayout.Position.1=0
@@ -596,7 +596,7 @@ WriteVariable17.Address=0
 WriteVariable17.Name=debug_direction
 WriteVariable17.RefExpr=
 WriteVariable17.Type=unsigned 8-bit
-WriteVariable18.Address=536872948
+WriteVariable18.Address=536871144
 WriteVariable18.Name=debug_driver_en
 WriteVariable18.RefExpr=
 WriteVariable18.Type=unsigned 8-bit
@@ -652,7 +652,7 @@ WriteVariable3.Address=536870944
 WriteVariable3.Name=BalanceD
 WriteVariable3.RefExpr=
 WriteVariable3.Type=float
-WriteVariable30.Address=536870968
+WriteVariable30.Address=536871173
 WriteVariable30.Name=debug_driver_fault_stop
 WriteVariable30.RefExpr=
 WriteVariable30.Type=unsigned 8-bit
