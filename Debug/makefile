@@ -67,6 +67,9 @@ default.size.stdout \
 OBJDUMP_LIST += \
 stm_gyro_stable_controller.list \
 
+OBJCOPY_HEX += \
+stm_gyro_stable_controller.hex \
+
 OBJCOPY_BIN += \
 stm_gyro_stable_controller.bin \
 
@@ -93,6 +96,11 @@ stm_gyro_stable_controller.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL
 	@echo 'Finished building: $@'
 	@echo ' '
 
+stm_gyro_stable_controller.hex: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objcopy  -O ihex $(EXECUTABLES) "stm_gyro_stable_controller.hex"
+	@echo 'Finished building: $@'
+	@echo ' '
+
 stm_gyro_stable_controller.bin: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	arm-none-eabi-objcopy  -O binary $(EXECUTABLES) "stm_gyro_stable_controller.bin"
 	@echo 'Finished building: $@'
@@ -100,10 +108,10 @@ stm_gyro_stable_controller.bin: $(EXECUTABLES) makefile objects.list $(OPTIONAL_
 
 # Other Targets
 clean:
-	-$(RM) $(OBJDUMP_LIST)$(C_UPPER_DEPS)$(S_DEPS)$(C_DEPS)$(OBJCOPY_BIN)$(CC_DEPS)$(SIZE_OUTPUT)$(C++_DEPS)$(EXECUTABLES)$(OBJS)$(CXX_DEPS)$(S_UPPER_DEPS)$(CPP_DEPS) stm_gyro_stable_controller.elf
+	-$(RM) $(OBJDUMP_LIST)$(C_UPPER_DEPS)$(S_DEPS)$(C_DEPS)$(OBJCOPY_BIN)$(CC_DEPS)$(OBJCOPY_HEX)$(SIZE_OUTPUT)$(C++_DEPS)$(EXECUTABLES)$(OBJS)$(CXX_DEPS)$(S_UPPER_DEPS)$(CPP_DEPS) stm_gyro_stable_controller.elf
 	-@echo ' '
 
-secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST) $(OBJCOPY_BIN)
+secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST) $(OBJCOPY_HEX) $(OBJCOPY_BIN)
 
 fail-specified-linker-script-missing:
 	@echo 'Error: Cannot find the specified linker script. Check the linker settings in the build configuration.'
