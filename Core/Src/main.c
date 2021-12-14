@@ -193,9 +193,7 @@ typedef struct
 #define BALANCE_STEPS_TO_METERS 0.0088495575221239
 #define BALANCE_PLATFORM_Y_MAX 5
 #define BALANCE_DUTY_MAX_ANGULAR 0.1
-#define BALANCE_DUTY_MAX_LINEAR 0.15
-
-
+#define BALANCE_DUTY_MAX_LINEAR 0.2
 /*
 #define SYSTEM_HARDWARE_PWM_CH1_PORT (&htim1)
 #define SYSTEM_HARDWARE_PWM_CH1_CH TIM_CHANNEL_1
@@ -280,7 +278,7 @@ axises ResAccel;
 axises ResMag;
 FusionBias fusionBias;
 FusionAhrs fusionAhrs;
-float samplePeriod = 0.01f;
+float samplePeriod = 0.02f;
 FusionVector3 gyroscopeSensitivity;
 FusionVector3 accelerometerSensitivity;
 FusionVector3 hardIronBias;
@@ -332,10 +330,10 @@ float SpeedINew = 1.5;
 float SpeedDNew = 0.7;
 float PlatformYDemand = 0;
 float SpeedFilter = 0.015;
-float AngleCorrection = 0;
-float BalanceP = 600;
-float BalanceD = 15000;
-float BalanceFilter = 0.9;
+float AngleCorrection = 3;
+float BalanceP = 900;
+float BalanceD = 28000;
+float BalanceFilter = 0.99;
 float BalancePID;
 float GyroY;
 float GyroYPrevious;
@@ -381,24 +379,12 @@ float DebugADCAmp5;
 #endif
 #endif
 
-float DebugImuAccX;
-float DebugImuAccY;
-float DebugImuAccZ;
-
-float DebugImuGyrX;
-float DebugImuGyrY;
-float DebugImuGyrZ;
-
-float DebugImuMagX;
-float DebugImuMagY;
-float DebugImuMagZ;
-
-float DebugImuRoll;
-float DebugImuPitch;
-float DebugImuYaw;
-
-uint8_t DebugDriverFaultStop = 0;
-
+axises DebugAccRaw;
+axises DebugGyroRaw;
+float DebugFilterAcc = 0.3;
+float DebugScallerAcc = 1000;
+float DebugFilterGyro = 0.4;
+float DebugScallerGyro = 1000;
 /*
 
 float LeftSpeed;
@@ -767,26 +753,27 @@ void ImuAccelUpdate()
 	axises NewData;
 	icm20948_accel_read(&NewData);
 
-	ResAccel.x += roundf((((NewData.x / 16384) - ResAccel.x) * SYSTEM_IMU_ACCEL_FILTER) * 100) / 100;
-	ResAccel.y += roundf((((NewData.y / 16384) - ResAccel.y) * SYSTEM_IMU_ACCEL_FILTER) * 100) / 100;
-	ResAccel.z += roundf((((NewData.z / 16384) - ResAccel.z) * SYSTEM_IMU_ACCEL_FILTER) * 100) / 100;
+	ResAccel.x += roundf((((NewData.x / 16384) - ResAccel.x) * DebugFilterAcc) * DebugScallerAcc) / DebugScallerAcc;
+	ResAccel.y += roundf((((NewData.y / 16384) - ResAccel.y) * DebugFilterAcc) * DebugScallerAcc) / DebugScallerAcc;
+	ResAccel.z += roundf((((NewData.z / 16384) - ResAccel.z) * DebugFilterAcc) * DebugScallerAcc) / DebugScallerAcc;
 
-	DebugImuAccX = ResAccel.x;
-	DebugImuAccY = ResAccel.y;
-	DebugImuAccZ = ResAccel.z;
+	DebugAccRaw.x = NewData.x / 16384;
+	DebugAccRaw.y = NewData.y / 16384;
+	DebugAccRaw.z = NewData.z / 16384;
+
 }
 void ImuGyroUpdate()
 {
 	axises NewData;
 	icm20948_gyro_read(&NewData);
 
-	ResGyro.x += roundf((((NewData.x / 16.4) - ResGyro.x) * SYSTEM_IMU_GYRO_FILTER) * 100) / 100;
-	ResGyro.y += roundf((((NewData.y / 16.4) - ResGyro.y) * SYSTEM_IMU_GYRO_FILTER) * 100) / 100;
-	ResGyro.z += roundf((((NewData.z / 16.4) - ResGyro.z) * SYSTEM_IMU_GYRO_FILTER) * 100) / 100;
+	ResGyro.x += roundf((((NewData.x / 16.4) - ResGyro.x) * DebugFilterGyro) * DebugScallerGyro) / DebugScallerGyro;
+	ResGyro.y += roundf((((NewData.y / 16.4) - ResGyro.y) * DebugFilterGyro) * DebugScallerGyro) / DebugScallerGyro;
+	ResGyro.z += roundf((((NewData.z / 16.4) - ResGyro.z) * DebugFilterGyro) * DebugScallerGyro) / DebugScallerGyro;
 
-	DebugImuGyrX = ResGyro.x;
-	DebugImuGyrY = ResGyro.y;
-	DebugImuGyrZ = ResGyro.z;
+	DebugGyroRaw.x = NewData.x / 16.4;
+	DebugGyroRaw.y = NewData.y / 16.4;
+	DebugGyroRaw.z = NewData.z / 16.4;
 }
 void ImuMagUpdate()
 {
@@ -796,10 +783,6 @@ void ImuMagUpdate()
 	ResMag.x += roundf((((NewData.x * 0.15) - ResMag.x) * SYSTEM_IMU_MAG_FILTER) * 100) / 100;
 	ResMag.y += roundf((((NewData.y * 0.15) - ResMag.y) * SYSTEM_IMU_MAG_FILTER) * 100) / 100;
 	ResMag.z += roundf((((NewData.z * 0.15) - ResMag.z) * SYSTEM_IMU_MAG_FILTER) * 100) / 100;
-
-	DebugImuMagX = ResMag.x;
-	DebugImuMagY = ResMag.y;
-	DebugImuMagZ = ResMag.z;
 }
 void ImuInit()
 {
@@ -815,8 +798,8 @@ void ImuInit()
 	hardIronBias.axis.y = 0.0f;
 	hardIronBias.axis.z = 0.0f;
 
-	FusionBiasInitialise(&fusionBias, 0.5f, samplePeriod);
-	FusionAhrsInitialise(&fusionAhrs, 0.5f);
+	FusionBiasInitialise(&fusionBias, 0.4f, samplePeriod);
+	FusionAhrsInitialise(&fusionAhrs, 0.6f);
 }
 void ImuUpdate()
 {
@@ -828,22 +811,16 @@ void ImuUpdate()
 	uncalibratedAccelerometer.axis.y = ResAccel.y;
 	uncalibratedAccelerometer.axis.z = ResAccel.z;
 
-	//uncalibratedMagnetometer.axis.x = ResMag.x;
-	//uncalibratedMagnetometer.axis.y = ResMag.y;
-	//uncalibratedMagnetometer.axis.z = ResMag.z;
-
 	FusionVector3 calibratedGyroscope = FusionCalibrationInertial(uncalibratedGyroscope, FUSION_ROTATION_MATRIX_IDENTITY, gyroscopeSensitivity, FUSION_VECTOR3_ZERO);
 	FusionVector3 calibratedAccelerometer = FusionCalibrationInertial(uncalibratedAccelerometer, FUSION_ROTATION_MATRIX_IDENTITY, accelerometerSensitivity, FUSION_VECTOR3_ZERO);
-	//FusionVector3 calibratedMagnetometer = FusionCalibrationMagnetic(uncalibratedMagnetometer, FUSION_ROTATION_MATRIX_IDENTITY, hardIronBias);
 
 	calibratedGyroscope = FusionBiasUpdate(&fusionBias, calibratedGyroscope);
 	FusionAhrsUpdateWithoutMagnetometer(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, samplePeriod);
-	//FusionAhrsUpdate(&fusionAhrs, calibratedGyroscope, calibratedAccelerometer, calibratedMagnetometer, samplePeriod);
 	eulerAngles = FusionQuaternionToEulerAngles(FusionAhrsGetQuaternion(&fusionAhrs));
 
-	DebugImuPitch = eulerAngles.angle.pitch;
-	DebugImuRoll = eulerAngles.angle.roll;
-	DebugImuYaw = eulerAngles.angle.yaw;
+	eulerAngles.angle.pitch = roundf(eulerAngles.angle.pitch * 1000) / 1000;
+	eulerAngles.angle.roll = roundf(eulerAngles.angle.roll * 1000) / 1000;
+	eulerAngles.angle.yaw = roundf(eulerAngles.angle.yaw * 1000) / 1000;
 }
 void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
 {
@@ -931,13 +908,13 @@ void BalancePrepare()
 	{
 		BalanceActiveDemand = BTControl.Drive;
 		BalanceActive = BTControl.Drive;
-		PositionLinearDemand = PositionLinear;
+		//PositionLinearDemand = PositionLinear;
 	}
 	else
 	{
 		BalanceActiveDemand = false;
 		BalanceActive = false;
-		PositionLinearDemand = PositionLinear;
+		//PositionLinearDemand = PositionLinear;
 	}
 }
 void BalanceCalculateSpeeds()
@@ -1088,7 +1065,7 @@ void BalancePositionAngularControl()
 }
 void BalanceLoop()
 {
-	GyroY = (eulerAngles.angle.pitch * 1) + PlatformYDemand + AngleCorrection - ParkingAngle;
+	GyroY = eulerAngles.angle.pitch + PlatformYDemand + AngleCorrection - ParkingAngle;
 
 	GyroYSpeed = GyroY - GyroYPrevious;
 	GyroYPrevious = GyroY;
@@ -1116,8 +1093,8 @@ void BalanceResultLoop()
 	SerialControlWheelsRequest.WheelLeft = ResultLeft;
 	SerialControlWheelsRequest.WheelRight = ResultRight;
 
-	SerialControlWheelsRequest.WheelLeft += RotationI * (BTControl.Front);
-	SerialControlWheelsRequest.WheelRight += RotationI * (BTControl.Front);
+	SerialControlWheelsRequest.WheelLeft += (RotationI * (BTControl.Front));
+	SerialControlWheelsRequest.WheelRight += (RotationI * (BTControl.Front));
 	SerialControlWheelsRequest.WheelLeft += ManualDrive;
 	SerialControlWheelsRequest.WheelRight += ManualDrive;
 
