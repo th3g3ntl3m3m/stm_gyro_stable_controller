@@ -218,9 +218,9 @@ typedef struct
 #define SYSTEM_DELAY_MS_LOW_UART 100
 
 #define WS2812_DELAY_LEN 48
-
-//#define DELAY_LEN 48
-#define LED_COUNT 16
+*/
+#define DELAY_LEN 48
+#define LED_COUNT 27
 #define HIGH 65
 #define LOW 26
 #define ARRAY_LEN DELAY_LEN+LED_COUNT*24
@@ -229,7 +229,7 @@ typedef struct
 uint32_t BUF_DMA[ARRAY_LEN]={0};
 
 uint16_t MAX_LIGHT = 128;
-
+/*
 
 #define MOTHERBOARD_DIFF 100
 
@@ -270,6 +270,7 @@ uint32_t LastUpdateGPIO = 0;
 uint32_t LastUpdateADC = 0;
 uint32_t LastUpdateIMU = 0;
 uint32_t LastUpdateLogic = 0;
+uint32_t LastUpdateLed = 0;
 
 ADCData AdcModule;
 
@@ -278,7 +279,7 @@ axises ResAccel;
 axises ResMag;
 FusionBias fusionBias;
 FusionAhrs fusionAhrs;
-float samplePeriod = 0.02f;
+float samplePeriod = 0.01f;
 FusionVector3 gyroscopeSensitivity;
 FusionVector3 accelerometerSensitivity;
 FusionVector3 hardIronBias;
@@ -331,8 +332,8 @@ float SpeedDNew = 0.7;
 float PlatformYDemand = 0;
 float SpeedFilter = 0.015;
 float AngleCorrection = 3;
-float BalanceP = 900;
-float BalanceD = 28000;
+float BalanceP = 100;
+float BalanceD = 15000;
 float BalanceFilter = 0.99;
 float BalancePID;
 float GyroY;
@@ -460,6 +461,7 @@ void BalanceSpeedLinearControl();
 void BalancePositionAngularControl();
 void BalanceLoop();
 void BalanceResultLoop();
+void DelayUs(uint16_t);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -829,9 +831,11 @@ void StepControl(uint8_t dir, uint32_t period, uint32_t steps)
 	{
 		HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_DIR_PIN, dir);
 		HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN, i);
-		HAL_Delay(1);
+		//HAL_Delay(1);
+		DelayUs(1);
 		HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_STEP_PIN, 0);
-		HAL_Delay(period);
+		//HAL_Delay(period);
+		DelayUs(1000);
 	}
 	HAL_GPIO_WritePin(SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PORT, SYSTEM_HARDWARE_STEPPER_MOTOR_EN_PIN, 0);
 }
@@ -1065,7 +1069,7 @@ void BalancePositionAngularControl()
 }
 void BalanceLoop()
 {
-	GyroY = eulerAngles.angle.pitch + PlatformYDemand + AngleCorrection - ParkingAngle;
+	GyroY = eulerAngles.angle.pitch + PlatformYDemand + AngleCorrection;
 
 	GyroYSpeed = GyroY - GyroYPrevious;
 	GyroYPrevious = GyroY;
@@ -1104,7 +1108,12 @@ void BalanceResultLoop()
 		SerialControlWheelsRequest.WheelRight = 0;
 	}
 }
-/*
+void DelayUs(uint16_t us)
+{
+	__HAL_TIM_SET_COUNTER(&htim8, 0);
+	while (__HAL_TIM_GET_COUNTER(&htim8) < us);
+}
+
 //------FLUPDATE
 uint8_t Fl_Update = 0;
 //------MODE ANIMATIO
@@ -1228,7 +1237,7 @@ void WS2812_UPDATE(void){
 	}
 	Fl_Update = 0;
 }
-*/
+
 /* USER CODE END 0 */
 
 /**
@@ -1266,6 +1275,7 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
+  MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
 #ifndef SYSTEM_NO_ADC_INIT
   ADCInit();
@@ -1277,13 +1287,17 @@ int main(void)
 #ifndef SYSTEM_NO_IMU_INIT
   ImuInit();
 #endif
-/*
+
 #ifndef SYSTEM_NO_LED_INIT
-  WS2812_Init();
+  WS2812_Init(0);
+  WS2812_Init(1);
+  WS2812_Init(2);
+  WS2812_Init(3);
   ColorRed = rand() % 255;
   ColorGreen = rand() % 255;
   ColorBlue = rand() % 255;
-#endif*/
+#endif
+  HAL_TIM_Base_Start(&htim8);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -1371,23 +1385,22 @@ int main(void)
 		  LastPkgTimeUartHigh = HAL_GetTick();
 	  }
 #endif
-/*
-	  	  if (HAL_GetTick() - LastUpdateLed > 100)
+
+	  	  if (HAL_GetTick() - LastUpdateLed > 50)
 	  	  {
 	  		  WS2812_UPDATE();
 	  		  LastUpdateLed = HAL_GetTick();
 	  	  }
-*/
 
 	  if (HAL_GetTick() - LastUpdateLogic > SYSTEM_TIMING_MS_LOGIC)
 	  {
-		  BalancePrepare();
-		  BalanceCalculateSpeeds();
-		  BalancePositionLinearControl();
-		  BalanceSpeedLinearControl();
-		  BalancePositionAngularControl();
-		  BalanceLoop();
-		  BalanceResultLoop();
+		  BalancePrepare();						// CMPLT
+		  BalanceCalculateSpeeds();				// CMPLT
+		  BalancePositionLinearControl();		//
+		  //BalanceSpeedLinearControl();			//
+		  //BalancePositionAngularControl();
+		  //BalanceLoop();						//
+		  //BalanceResultLoop();					//
 		  LastUpdateLogic = HAL_GetTick();
 	  }
 
